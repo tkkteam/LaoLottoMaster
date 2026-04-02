@@ -11,13 +11,14 @@ import {
   calculateBackyard,
   backtestPattern,
   findBestPattern,
+  calculateCombinedConfidence,
   PATTERNS
-} from './services/lottoService';
-import { LottoResult, PredictionResult, BacktestResult, Pattern } from './types';
+  } from './services/lottoService';
+  import { LottoResult, PredictionResult, BacktestResult, Pattern } from './types';
 
-const COLORS = ['#22d3ee', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899'];
+  const COLORS = ['#22d3ee', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899'];
 
-const App: React.FC = () => {
+  const App: React.FC = () => {
   const [allData, setAllData] = useState<LottoResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [modeLimit, setModeLimit] = useState(40);
@@ -27,75 +28,9 @@ const App: React.FC = () => {
   const [bestPatternInfo, setBestPatternInfo] = useState<{ pattern: Pattern, stats: BacktestResult } | null>(null);
   const [allPatternStats, setAllPatternStats] = useState<Array<{ name: string, stats: BacktestResult }>>([]);
 
-  useEffect(() => { 
-    loadData(); 
-  }, []);
-
   useEffect(() => {
-    if (allData.length >= 2) {
-      autoCalculate();
-    }
-  }, [allData, bestPatternInfo]);
-
-  const loadData = async () => {
-    setLoading(true);
-    const data = await fetchLottoData();
-    setAllData(data);
-
-    if (data.length > 0) {
-      const best = findBestPattern(data, 20);
-      setBestPatternInfo(best);
-
-      const allStats = PATTERNS.map(p => ({
-        name: p.name,
-        stats: backtestPattern(data, p, 20)
-      })).sort((a, b) => b.stats.directAccuracy - a.stats.directAccuracy || b.stats.runningAccuracy - a.stats.runningAccuracy);
-      setAllPatternStats(allStats);
-    }
-
-    setLoading(false);
-  };
-
-  const autoCalculate = () => {
-    if (allData.length < 2 || !bestPatternInfo) return;
-
-    const lastResult = allData[0];
-    const prevResult = allData[1];
-
-    const prevR2 = parseInt(prevResult.r2, 10);
-    const lastR2 = parseInt(lastResult.r2, 10);
-    const lastR3 = lastResult.r3;
-    const lastR4 = lastResult.r4;
-
-    const activePattern = bestPatternInfo.pattern;
-
-    const resPri = activePattern.calc(prevR2, lastR2, lastR4).toString().padStart(2, '0');
-    const resNum = parseInt(resPri, 10);
-
-    const hLast = parseInt(lastR3[0], 10) || 0;
-    const hPrev = parseInt(prevResult?.r3[0] || "0", 10);
-    const dSum = getDigitSum(lastR4);
-    const predictedH = ( (hLast * 2) + hPrev + dSum + 3 ) % 10;
-
-    const mirrorPair = activePattern.getMirrorPair?.(resNum);
-    const mirrorStr = mirrorPair?.toString().padStart(2, '0') || getMirror(resPri);
-
-    setManualRes({
-      primary: resPri,
-      mirror: mirrorStr,
-      rhythm: ((parseInt(resPri[0]) + 5) % 10).toString() + ((parseInt(resPri[1]) + 3) % 10).toString(),
-      triple: predictedH.toString() + resPri,
-      confidence: Math.round(bestPatternInfo.stats.directAccuracy + (bestPatternInfo.stats.runningAccuracy / 2)),
-      formulaName: activePattern.name
-    });
-  };
-
-  const filteredData = useMemo(() => {
-    return allData.filter(i => 
-      (yearFilter === 'all' || i.year === yearFilter) && 
-      (i.date.includes(searchTerm) || i.r2.includes(searchTerm) || i.r3.includes(searchTerm))
-    );
-  }, [allData, yearFilter, searchTerm]);
+    loadData();
+  }, []);
 
   const stats = useMemo(() => {
     if (allData.length === 0) return null;
@@ -142,6 +77,85 @@ const App: React.FC = () => {
       aiMaster: aiMasterNum
     };
   }, [allData, modeLimit, bestPatternInfo]);
+
+  useEffect(() => {
+    if (allData.length >= 2 && stats) {
+      autoCalculate();
+    }
+  }, [allData, bestPatternInfo, stats]);
+
+  const loadData = async () => {
+    setLoading(true);
+    const data = await fetchLottoData();
+    setAllData(data);
+
+    if (data.length > 0) {
+      const best = findBestPattern(data, 20);
+      setBestPatternInfo(best);
+
+      const allStats = PATTERNS.map(p => ({
+        name: p.name,
+        stats: backtestPattern(data, p, 20)
+      })).sort((a, b) => b.stats.directAccuracy - a.stats.directAccuracy || b.stats.runningAccuracy - a.stats.runningAccuracy);
+      setAllPatternStats(allStats);
+    }
+
+    setLoading(false);
+  };
+
+  const autoCalculate = () => {
+    if (allData.length < 2 || !bestPatternInfo || !stats) return;
+
+    const lastResult = allData[0];
+    const prevResult = allData[1];
+
+    const prevR2 = parseInt(prevResult.r2, 10);
+    const lastR2 = parseInt(lastResult.r2, 10);
+    const lastR3 = lastResult.r3;
+    const lastR4 = lastResult.r4;
+
+    const activePattern = bestPatternInfo.pattern;
+
+    // Predictions from ALL patterns for convergence check
+    const allPredictions = PATTERNS.map(p => ({
+      name: p.name,
+      value: p.calc(prevR2, lastR2, lastR4).toString().padStart(2, '0')
+    }));
+
+    const resPri = allPredictions.find(p => p.name === activePattern.name)?.value || allPredictions[0].value;
+    const resNum = parseInt(resPri, 10);
+
+    const hLast = parseInt(lastR3[0], 10) || 0;
+    const hPrev = parseInt(prevResult?.r3[0] || "0", 10);
+    const dSum = getDigitSum(lastR4);
+    const predictedH = ( (hLast * 2) + hPrev + dSum + 3 ) % 10;
+
+    const mirrorPair = activePattern.getMirrorPair?.(resNum);
+    const mirrorStr = mirrorPair?.toString().padStart(2, '0') || getMirror(resPri);
+
+    const combinedConfidence = calculateCombinedConfidence(
+      allPredictions,
+      bestPatternInfo.stats,
+      stats.topT,
+      stats.topU
+    );
+
+    setManualRes({
+      primary: resPri,
+      mirror: mirrorStr,
+      rhythm: ((parseInt(resPri[0]) + 5) % 10).toString() + ((parseInt(resPri[1]) + 3) % 10).toString(),
+      triple: predictedH.toString() + resPri,
+      confidence: combinedConfidence,
+      formulaName: activePattern.name
+    });
+  };
+
+  const filteredData = useMemo(() => {
+    return allData.filter(i => 
+      (yearFilter === 'all' || i.year === yearFilter) && 
+      (i.date.includes(searchTerm) || i.r2.includes(searchTerm) || i.r3.includes(searchTerm))
+    );
+  }, [allData, yearFilter, searchTerm]);
 
   return (
     <div className="max-w-[1440px] mx-auto p-4 md:p-8">
@@ -313,50 +327,93 @@ const App: React.FC = () => {
             )}
           </section>
 
-          {/* Ranking Table */}
+          {/* Leaderboard Section */}
           <section className="glass-card">
-            <h2 className="section-title text-slate-100 !mb-6">
-              <span className="p-1.5 bg-blue-500 rounded-md">
-                <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" />
-                </svg>
-              </span>
-              FORMULA ACCURACY RANKINGS
-            </h2>
-            <div className="custom-scrollbar overflow-x-auto">
-              <table className="w-full data-table">
-                <thead>
-                  <tr>
-                    <th className="!text-left">Model Name</th>
-                    <th className="text-center">Direct</th>
-                    <th className="text-center">Running</th>
-                    <th className="text-right">Total Score</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {allPatternStats.map((p, idx) => (
-                    <tr key={idx} className={`group transition-colors ${idx === 0 ? 'bg-emerald-500/5' : 'hover:bg-slate-800/30'}`}>
-                      <td className="py-4">
+            <div className="flex justify-between items-center mb-8">
+              <div>
+                <h3 className="text-xl font-black text-white tracking-tight">Algorithm Leaderboard</h3>
+                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">การจัดอันดับประสิทธิภาพ AI ENGINE รายงวด</p>
+              </div>
+              <div className="flex items-center gap-2 px-4 py-2 bg-slate-950/60 rounded-full border border-slate-800">
+                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">20 Rounds Live Test</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4">
+              {allPatternStats.map((p, idx) => {
+                const isBest = idx === 0;
+                const accuracy = p.stats.directAccuracy;
+                const running = p.stats.runningAccuracy;
+                const combined = accuracy + (p.stats.runningHits / p.stats.totalRounds * 100);
+                
+                return (
+                  <div 
+                    key={p.name} 
+                    className={`group relative flex flex-col md:flex-row items-center justify-between p-5 rounded-[1.5rem] border transition-all duration-500 ${
+                      isBest 
+                        ? 'bg-gradient-to-r from-emerald-500/15 via-emerald-500/5 to-transparent border-emerald-500/40 shadow-xl shadow-emerald-500/10' 
+                        : 'bg-slate-900/40 border-slate-800/60 hover:border-slate-700 hover:bg-slate-900/60'
+                    }`}
+                  >
+                    <div className="flex items-center gap-6 mb-4 md:mb-0 w-full md:w-auto">
+                      <div className={`relative flex items-center justify-center w-12 h-12 rounded-2xl font-black text-xl transition-transform group-hover:scale-110 ${
+                        isBest ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/30' : 'bg-slate-800 text-slate-500'
+                      }`}>
+                        {idx + 1}
+                      </div>
+                      
+                      <div className="flex-1">
                         <div className="flex items-center gap-3">
-                          <span className={`w-6 h-6 flex items-center justify-center rounded-full text-[10px] font-black ${idx === 0 ? 'bg-emerald-500 text-white' : 'bg-slate-800 text-slate-500'}`}>
-                            {idx + 1}
-                          </span>
-                          <span className={`font-black text-sm ${idx === 0 ? 'text-emerald-400' : 'text-slate-300'}`}>
+                          <h4 className={`text-lg font-black tracking-tight ${isBest ? 'text-white' : 'text-slate-300'}`}>
                             {p.name}
-                          </span>
+                          </h4>
+                          {isBest && (
+                            <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 rounded text-[9px] font-black uppercase tracking-tighter">
+                              Active Master
+                            </span>
+                          )}
                         </div>
-                      </td>
-                      <td className="text-center text-sm font-bold text-white">{p.stats.directAccuracy.toFixed(1)}%</td>
-                      <td className="text-center text-sm font-medium text-slate-500">{p.stats.runningAccuracy.toFixed(1)}%</td>
-                      <td className="text-right">
-                        <span className={`font-black text-base ${idx === 0 ? 'text-emerald-400' : 'text-blue-400'}`}>
-                          {(p.stats.directAccuracy + (p.stats.runningHits / p.stats.totalRounds * 100)).toFixed(1)}%
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                        <div className="flex items-center gap-4 mt-1">
+                          <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Neural Stream</span>
+                          <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">ID: AX-{accuracy.toFixed(0)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between w-full md:w-auto gap-8 border-t border-slate-800 md:border-t-0 pt-4 md:pt-0">
+                      <div className="flex gap-8">
+                        <div className="text-center md:text-right">
+                          <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Direct</p>
+                          <div className={`text-2xl font-black ${isBest ? 'text-emerald-400' : 'text-white'}`}>
+                            {accuracy.toFixed(1)}<span className="text-xs ml-0.5 opacity-50">%</span>
+                          </div>
+                        </div>
+                        
+                        <div className="text-center md:text-right">
+                          <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Running</p>
+                          <div className="text-2xl font-black text-slate-400">
+                            {running.toFixed(1)}<span className="text-xs ml-0.5 opacity-50">%</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="hidden lg:block w-32 ml-4">
+                        <div className="flex justify-between text-[8px] font-black text-slate-600 uppercase mb-2">
+                          <span>Confidence</span>
+                          <span>{combined.toFixed(0)}%</span>
+                        </div>
+                        <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
+                          <div 
+                            className={`h-full transition-all duration-1000 ease-out ${isBest ? 'bg-emerald-500' : 'bg-slate-600'}`} 
+                            style={{ width: `${combined}%` }}
+                          ></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </section>
 
@@ -410,7 +467,7 @@ const App: React.FC = () => {
         </main>
 
         <aside className="lg:col-span-4 space-y-8">
-          <div className="glass-card !p-0 overflow-hidden sticky top-8">
+          <div className="glass-card !p-0 overflow-hidden">
             <div className="p-6 bg-slate-900/60 border-b border-slate-800">
               <h3 className="section-title !mb-4">Historical Terminal</h3>
               <div className="space-y-3">

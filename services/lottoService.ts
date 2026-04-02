@@ -195,6 +195,35 @@ export function backtestPattern(
   };
 }
 
+export function calculateCombinedConfidence(
+  predictions: Array<{ name: string; value: string }>,
+  bestPatternStats: BacktestResult,
+  topT: string[],
+  topU: string[]
+): number {
+  // 1. Base Accuracy Score (40%)
+  const baseAccuracy = (bestPatternStats.directAccuracy * 0.8) + (bestPatternStats.runningAccuracy * 0.2);
+  const scoreFromAccuracy = Math.min(baseAccuracy, 100) * 0.4;
+
+  // 2. Convergence Score (40%) - How many patterns agree on the same number
+  const valueCounts: Record<string, number> = {};
+  predictions.forEach(p => {
+    valueCounts[p.value] = (valueCounts[p.value] || 0) + 1;
+  });
+  
+  const primaryValue = predictions[0].value;
+  const agreementCount = valueCounts[primaryValue] || 1;
+  const convergenceBonus = (agreementCount / predictions.length) * 100 * 0.4;
+
+  // 3. Frequency Alignment (20%) - Does it match Hot Numbers?
+  let frequencyBonus = 0;
+  if (topT.includes(primaryValue[0])) frequencyBonus += 10;
+  if (topU.includes(primaryValue[1])) frequencyBonus += 10;
+  const scoreFromFrequency = frequencyBonus;
+
+  return Math.round(scoreFromAccuracy + convergenceBonus + scoreFromFrequency);
+}
+
 export function findBestPattern(results: LottoResult[], rounds: number = 20): { pattern: Pattern, stats: BacktestResult } {
   let bestPattern = PATTERNS[0];
   let bestStats = backtestPattern(results, bestPattern, rounds);
