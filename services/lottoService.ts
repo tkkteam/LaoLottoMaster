@@ -438,6 +438,125 @@ export const PATTERNS: Pattern[] = [
     }
   },
   {
+    name: "4D Deep Learning (วิเคราะห์ 4 หลักเชิงลึก)",
+    calc: (p, l, l4, results?) => {
+      /**
+       * 4D DEEP LEARNING v2 - ผสม Markov Chain + 4D Analysis
+       * ใช้ข้อมูลย้อนหลัง 40-50 งวด
+       * 
+       * หลักการ:
+       * 1. Markov Transition (40%) - ความน่าจะเป็นเปลี่ยนสถานะ
+       * 2. 4D Position Pattern (30%) - วิเคราะห์ตำแหน่งใน 4 หลัก
+       * 3. Recent Trend (30%) - แนวโน้ม 10 งวดล่าสุด
+       */
+      
+      if (!results || results.length < 20) {
+        const tens = (Math.floor(l / 10) + 3) % 10;
+        const units = ((l % 10) + 7) % 10;
+        return (tens * 10) + units;
+      }
+
+      const analysisWindow = Math.min(50, results.length);
+      const recentData = results.slice(0, analysisWindow);
+      const lastR4 = results[0].r4.padStart(4, '0');
+      
+      // ===== 1. MARKOV TRANSITION MATRIX (40%) =====
+      // สร้าง matrix ความน่าจะเป็นของการเปลี่ยนสถานะ
+      const tensTransition: number[][] = Array(10).fill(null).map(() => Array(10).fill(0));
+      const unitsTransition: number[][] = Array(10).fill(null).map(() => Array(10).fill(0));
+      
+      // นับความถี่ของการเปลี่ยนสถานะ
+      for (let i = 1; i < analysisWindow; i++) {
+        const currentR2 = parseInt(results[i].r2, 10);
+        const nextR2 = parseInt(results[i - 1].r2, 10);
+        
+        const currentTens = Math.floor(currentR2 / 10);
+        const currentUnits = currentR2 % 10;
+        const nextTens = Math.floor(nextR2 / 10);
+        const nextUnits = nextR2 % 10;
+        
+        tensTransition[currentTens][nextTens]++;
+        unitsTransition[currentUnits][nextUnits]++;
+      }
+      
+      // คำนวณความน่าจะเป็น
+      const lastTens = Math.floor(l / 10);
+      const lastUnits = l % 10;
+      
+      const tensProbs = tensTransition[lastTens];
+      const unitsProbs = unitsTransition[lastUnits];
+      
+      // หาค่าสูงสุด
+      const maxTensProb = Math.max(...tensProbs);
+      const maxUnitsProb = Math.max(...unitsProbs);
+      
+      const predictedTensMarkov = maxTensProb > 0 ? tensProbs.indexOf(maxTensProb) : lastTens;
+      const predictedUnitsMarkov = maxUnitsProb > 0 ? unitsProbs.indexOf(maxUnitsProb) : lastUnits;
+      
+      // ===== 2. 4D POSITION PATTERN (30%) =====
+      // วิเคราะห์ว่าหลักสิบ-หน่วย ใน 4 หลัก มี pattern อย่างไร
+      const positionPattern: number[][] = [
+        Array(10).fill(0),  // ตำแหน่งที่ 3 (หลักสิบ)
+        Array(10).fill(0)   // ตำแหน่งที่ 4 (หลักหน่วย)
+      ];
+      
+      recentData.forEach(r => {
+        const r4 = r.r4.padStart(4, '0');
+        positionPattern[0][parseInt(r4[2], 10)]++;  // หลักสิบจาก 4 หลัก
+        positionPattern[1][parseInt(r4[3], 10)]++;  // หลักหน่วยจาก 4 หลัก
+      });
+      
+      // หาคะแนนความถี่
+      const lastTensFrom4D = parseInt(lastR4[2], 10);
+      const lastUnitsFrom4D = parseInt(lastR4[3], 10);
+      
+      const maxPosTens = Math.max(...positionPattern[0]);
+      const maxPosUnits = Math.max(...positionPattern[1]);
+      
+      const tensFreqScore = positionPattern[0][lastTensFrom4D] / maxPosTens;
+      const unitsFreqScore = positionPattern[1][lastUnitsFrom4D] / maxPosUnits;
+      
+      // ถ้ายิ่งออกบ่อย ยิ่งมีโอกาสออกอีก
+      const predictedTens4D = tensFreqScore > 0.5 ? lastTensFrom4D : positionPattern[0].indexOf(maxPosTens);
+      const predictedUnits4D = unitsFreqScore > 0.5 ? lastUnitsFrom4D : positionPattern[1].indexOf(maxPosUnits);
+      
+      // ===== 3. RECENT TREND (30%) =====
+      // ดู 10 งวดล่าสุด เพื่อจับแนวโน้มระยะสั้น
+      const recent10 = results.slice(0, Math.min(10, results.length));
+      const recentTensAvg = recent10.reduce((sum, r) => sum + Math.floor(parseInt(r.r2, 10) / 10), 0) / recent10.length;
+      const recentUnitsAvg = recent10.reduce((sum, r) => sum + (parseInt(r.r2, 10) % 10), 0) / recent10.length;
+      
+      const predictedTensRecent = Math.round(recentTensAvg) % 10;
+      const predictedUnitsRecent = Math.round(recentUnitsAvg) % 10;
+      
+      // ===== COMBINE ALL PREDICTIONS =====
+      // ผสมผลลัพธ์จาก 3 หลักการ
+      // ให้น้ำหนัก: Markov 40%, 4D 30%, Recent 30%
+      
+      // วิธีผสม: นับว่าเลขไหนถูกเลือกบ่อยที่สุด
+      const tensVotes: number[] = Array(10).fill(0);
+      const unitsVotes: number[] = Array(10).fill(0);
+      
+      // Markov (น้ำหนัก 40% = 4 โหวต)
+      tensVotes[predictedTensMarkov] += 4;
+      unitsVotes[predictedUnitsMarkov] += 4;
+      
+      // 4D Pattern (น้ำหนัก 30% = 3 โหวต)
+      tensVotes[predictedTens4D] += 3;
+      unitsVotes[predictedUnits4D] += 3;
+      
+      // Recent Trend (น้ำหนัก 30% = 3 โหวต)
+      tensVotes[predictedTensRecent] += 3;
+      unitsVotes[predictedUnitsRecent] += 3;
+      
+      // เลือกเลขที่ได้โหวตสูงสุด
+      const finalTens = tensVotes.indexOf(Math.max(...tensVotes));
+      const finalUnits = unitsVotes.indexOf(Math.max(...unitsVotes));
+      
+      return (finalTens * 10) + finalUnits;
+    }
+  },
+  {
     name: "MASTER ENSEMBLE (สูตรรวมพลัง)",
     calc: (p, l, l4, results?) => {
       /**

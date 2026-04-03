@@ -416,6 +416,19 @@ import {
             </section>
           )}
 
+          {/* Backyard Strategy */}
+          <section className="glass-card !border-l-8 !border-l-indigo-600 !bg-indigo-600/5">
+            <h2 className="section-title text-indigo-400">Backyard Strategy (ชุดเสริม)</h2>
+            <div className="grid grid-cols-2 gap-3">
+              {stats?.backyard.map((num, i) => (
+                <div key={i} className="bg-slate-950/60 p-4 rounded-2xl border border-indigo-500/10 text-center hover:border-indigo-500/30 transition-all group">
+                  <div className="text-2xl font-black text-white group-hover:scale-110 transition-transform">{num}</div>
+                  <div className="text-[8px] font-black text-slate-600 uppercase tracking-[0.2em] mt-1">UNIT {i+1}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+
           {/* Engine */}
           <section className="glass-card bg-gradient-to-br from-slate-900/60 to-slate-900/40">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
@@ -749,19 +762,6 @@ import {
               </table>
             </div>
           </div>
-          
-          {/* Backyard Strategy */}
-          <section className="glass-card !border-l-8 !border-l-indigo-600 !bg-indigo-600/5">
-            <h2 className="section-title text-indigo-400">Backyard Strategy (ชุดเสริม)</h2>
-            <div className="grid grid-cols-2 gap-3">
-              {stats?.backyard.map((num, i) => (
-                <div key={i} className="bg-slate-950/60 p-4 rounded-2xl border border-indigo-500/10 text-center hover:border-indigo-500/30 transition-all group">
-                  <div className="text-2xl font-black text-white group-hover:scale-110 transition-transform">{num}</div>
-                  <div className="text-[8px] font-black text-slate-600 uppercase tracking-[0.2em] mt-1">UNIT {i+1}</div>
-                </div>
-              ))}
-            </div>
-          </section>
         </aside>
       </div>
 
