@@ -12,9 +12,12 @@ import {
   backtestPattern,
   findBestPattern,
   calculateCombinedConfidence,
+  filterPatternsByConsecutive,
+  analyzeHybridPatterns,
+  analyzeRepeatProbability,
   PATTERNS
   } from './services/lottoService';
-  import { LottoResult, PredictionResult, BacktestResult, Pattern } from './types';
+  import { LottoResult, PredictionResult, BacktestResult, Pattern, HybridPatternInfo, RepeatAnalysis } from './types';
 
   const COLORS = ['#22d3ee', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899'];
 
@@ -27,6 +30,8 @@ import {
   const [manualRes, setManualRes] = useState<PredictionResult | null>(null);
   const [bestPatternInfo, setBestPatternInfo] = useState<{ pattern: Pattern, stats: BacktestResult } | null>(null);
   const [allPatternStats, setAllPatternStats] = useState<Array<{ name: string, stats: BacktestResult }>>([]);
+  const [hybridPatterns, setHybridPatterns] = useState<Array<HybridPatternInfo>>([]);
+  const [repeatAnalysis, setRepeatAnalysis] = useState<RepeatAnalysis | null>(null);
 
   useEffect(() => {
     loadData();
@@ -66,7 +71,8 @@ import {
     const aiMasterNum = activePattern.calc(
       allData.length >= 2 ? parseInt(allData[1].r2, 10) : 0,
       parseInt(lastResult.r2, 10),
-      lastResult.r4
+      lastResult.r4,
+      allData // Pass all historical data for advanced patterns
     ).toString().padStart(2, '0');
 
     return {
@@ -90,21 +96,54 @@ import {
     setAllData(data);
 
     if (data.length > 0) {
-      const best = findBestPattern(data, 20);
-      setBestPatternInfo(best);
+      // HYBRID ANALYSIS - ต้องทำก่อน เพื่อเลือก Active Master ที่ถูกต้อง
+      const hybrid = analyzeHybridPatterns(data, undefined, 6); // ครั้งแรกไม่มี currentMaster
+      setHybridPatterns(hybrid);
+      
+      // เลือก Active Master ที่ดีที่สุด
+      const activeMaster = hybrid.find(h => h.isActiveMaster);
+      if (activeMaster) {
+        setBestPatternInfo({
+          pattern: activeMaster.pattern,
+          stats: activeMaster.historicalStats
+        });
+      } else {
+        // ถ้าไม่มี Qualified ให้ใช้สูตรที่ดีที่สุด
+        const best = findBestPattern(data, 20);
+        setBestPatternInfo(best);
+      }
 
+      // Basic pattern stats สำหรับ Leaderboard
       const allStats = PATTERNS.map(p => ({
         name: p.name,
         stats: backtestPattern(data, p, 20)
       })).sort((a, b) => b.stats.directAccuracy - a.stats.directAccuracy || b.stats.runningAccuracy - a.stats.runningAccuracy);
       setAllPatternStats(allStats);
+
+      // REPEAT ANALYSIS - วิเคราะห์โอกาสออกซ้ำของเลขล่าสุด
+      const lastR2 = data[0].r2.padStart(2, '0');
+      const repeat = analyzeRepeatProbability(data, lastR2, 100);
+      setRepeatAnalysis(repeat);
     }
 
     setLoading(false);
   };
 
   const autoCalculate = () => {
-    if (allData.length < 2 || !bestPatternInfo || !stats) return;
+    console.log('\n🔄 RE-ANALYZE Button Clicked!');
+    console.log('   allData.length:', allData?.length);
+    console.log('   bestPatternInfo:', bestPatternInfo);
+    console.log('   stats:', stats);
+    
+    if (allData.length < 2 || !bestPatternInfo || !stats) {
+      console.log('   ❌ Cannot calculate: Missing required data');
+      console.log('   - allData.length < 2:', allData.length < 2);
+      console.log('   - !bestPatternInfo:', !bestPatternInfo);
+      console.log('   - !stats:', !stats);
+      return;
+    }
+
+    console.log('   ✅ Starting calculation...');
 
     const lastResult = allData[0];
     const prevResult = allData[1];
@@ -114,13 +153,19 @@ import {
     const lastR3 = lastResult.r3;
     const lastR4 = lastResult.r4;
 
+    console.log('   lastResult:', lastResult);
+    console.log('   prevResult:', prevResult);
+
     const activePattern = bestPatternInfo.pattern;
+    console.log('   activePattern:', activePattern.name);
 
     // Predictions from ALL patterns for convergence check
     const allPredictions = PATTERNS.map(p => ({
       name: p.name,
-      value: p.calc(prevR2, lastR2, lastR4).toString().padStart(2, '0')
+      value: p.calc(prevR2, lastR2, lastR4, allData).toString().padStart(2, '0')
     }));
+
+    console.log('   allPredictions:', allPredictions);
 
     const resPri = allPredictions.find(p => p.name === activePattern.name)?.value || allPredictions[0].value;
     const resNum = parseInt(resPri, 10);
@@ -139,6 +184,15 @@ import {
       stats.topT,
       stats.topU
     );
+
+    console.log('   ✅ Setting manualRes:', {
+      primary: resPri,
+      mirror: mirrorStr,
+      rhythm: ((parseInt(resPri[0]) + 5) % 10).toString() + ((parseInt(resPri[1]) + 3) % 10).toString(),
+      triple: predictedH.toString() + resPri,
+      confidence: combinedConfidence,
+      formulaName: activePattern.name
+    });
 
     setManualRes({
       primary: resPri,
@@ -226,6 +280,93 @@ import {
               </div>
             </div>
           </div>
+
+          {/* REPEAT ANALYSIS */}
+          {repeatAnalysis && allData.length > 0 && (
+            <div className={`glass-card !border-t-4 ${
+              repeatAnalysis.confidenceLevel === 'HIGH' ? '!border-t-red-500' :
+              repeatAnalysis.confidenceLevel === 'MEDIUM' ? '!border-t-amber-500' :
+              '!border-t-emerald-500'
+            }`}>
+              <div className="flex justify-between items-start mb-4">
+                <div>
+                  <p className="section-title text-amber-500">
+                    <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></span>
+                    REPEAT ANALYSIS (วิเคราะห์เลขซ้ำ)
+                  </p>
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    งวดล่าสุด: <span className="text-white font-black">{allData[0].date}</span> ออก: <span className="text-amber-400 font-black text-lg">{allData[0].r2}</span>
+                  </p>
+                </div>
+                <div className={`px-4 py-2 rounded-xl border ${
+                  repeatAnalysis.confidenceLevel === 'HIGH' ? 'bg-red-500/20 border-red-500/30' :
+                  repeatAnalysis.confidenceLevel === 'MEDIUM' ? 'bg-amber-500/20 border-amber-500/30' :
+                  'bg-emerald-500/20 border-emerald-500/30'
+                }`}>
+                  <span className={`text-2xl font-black ${
+                    repeatAnalysis.confidenceLevel === 'HIGH' ? 'text-red-400' :
+                    repeatAnalysis.confidenceLevel === 'MEDIUM' ? 'text-amber-400' :
+                    'text-emerald-400'
+                  }`}>
+                    {repeatAnalysis.repeatPercentage.toFixed(1)}%
+                  </span>
+                  <p className="text-[8px] font-black uppercase text-slate-500">Repeat Rate</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                <div className="bg-slate-900/60 p-3 rounded-xl border border-slate-800">
+                  <p className="text-[9px] font-black text-slate-600 uppercase mb-1">Total Occurrences</p>
+                  <p className="text-2xl font-black text-white">{repeatAnalysis.totalOccurrences} <span className="text-sm text-slate-500">ครั้ง</span></p>
+                </div>
+                <div className="bg-slate-900/60 p-3 rounded-xl border border-slate-800">
+                  <p className="text-[9px] font-black text-slate-600 uppercase mb-1">Repeat Next Draw</p>
+                  <p className="text-2xl font-black text-amber-400">{repeatAnalysis.repeatAfterOne} <span className="text-sm text-slate-500">ครั้ง</span></p>
+                </div>
+                <div className="bg-slate-900/60 p-3 rounded-xl border border-slate-800">
+                  <p className="text-[9px] font-black text-slate-600 uppercase mb-1">Avg Gap</p>
+                  <p className="text-2xl font-black text-cyan-400">{repeatAnalysis.averageGap.toFixed(1)} <span className="text-sm text-slate-500">งวด</span></p>
+                </div>
+                <div className="bg-slate-900/60 p-3 rounded-xl border border-slate-800">
+                  <p className="text-[9px] font-black text-slate-600 uppercase mb-1">Last Seen</p>
+                  <p className="text-sm font-black text-purple-400">{repeatAnalysis.lastSeenDate}</p>
+                </div>
+              </div>
+
+              {/* Progress Bar */}
+              <div className="mb-4">
+                <div className="flex justify-between text-[9px] font-black text-slate-600 uppercase mb-2">
+                  <span>Repeat Probability</span>
+                  <span>{repeatAnalysis.repeatPercentage.toFixed(1)}%</span>
+                </div>
+                <div className="h-3 w-full bg-slate-800 rounded-full overflow-hidden">
+                  <div 
+                    className={`h-full transition-all duration-1000 ${
+                      repeatAnalysis.repeatPercentage > 20 ? 'bg-red-500' :
+                      repeatAnalysis.repeatPercentage > 10 ? 'bg-amber-500' :
+                      'bg-emerald-500'
+                    }`}
+                    style={{ width: `${Math.min(repeatAnalysis.repeatPercentage * 2, 100)}%` }}
+                  ></div>
+                </div>
+              </div>
+
+              {/* Recommendation */}
+              <div className={`p-4 rounded-xl border ${
+                repeatAnalysis.confidenceLevel === 'HIGH' ? 'bg-red-500/10 border-red-500/30' :
+                repeatAnalysis.confidenceLevel === 'MEDIUM' ? 'bg-amber-500/10 border-amber-500/30' :
+                'bg-emerald-500/10 border-emerald-500/30'
+              }`}>
+                <p className={`text-sm font-black ${
+                  repeatAnalysis.confidenceLevel === 'HIGH' ? 'text-red-400' :
+                  repeatAnalysis.confidenceLevel === 'MEDIUM' ? 'text-amber-400' :
+                  'text-emerald-400'
+                }`}>
+                  {repeatAnalysis.recommendation}
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Backtest Statistics */}
           {bestPatternInfo && (
@@ -327,86 +468,144 @@ import {
             )}
           </section>
 
-          {/* Leaderboard Section */}
+          {/* Leaderboard Section - HYBRID APPROACH */}
           <section className="glass-card">
             <div className="flex justify-between items-center mb-8">
               <div>
                 <h3 className="text-xl font-black text-white tracking-tight">Algorithm Leaderboard</h3>
-                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">การจัดอันดับประสิทธิภาพ AI ENGINE รายงวด</p>
+                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">การจัดอันดับประสิทธิภาพ AI ENGINE แบบ Hybrid</p>
               </div>
-              <div className="flex items-center gap-2 px-4 py-2 bg-slate-950/60 rounded-full border border-slate-800">
-                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">20 Rounds Live Test</span>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 px-3 py-2 bg-emerald-500/10 rounded-full border border-emerald-500/30">
+                  <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
+                  <span className="text-[10px] font-black text-emerald-400 uppercase tracking-tighter">
+                    {hybridPatterns.filter(h => h.isQualified).length} Qualified
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 px-3 py-2 bg-amber-500/10 rounded-full border border-amber-500/30">
+                  <span className="w-1.5 h-1.5 bg-amber-500 rounded-full"></span>
+                  <span className="text-[10px] font-black text-amber-400 uppercase tracking-tighter">
+                    Hybrid Mode
+                  </span>
+                </div>
               </div>
             </div>
 
             <div className="grid grid-cols-1 gap-4">
-              {allPatternStats.map((p, idx) => {
-                const isBest = idx === 0;
-                const accuracy = p.stats.directAccuracy;
-                const running = p.stats.runningAccuracy;
-                const combined = accuracy + (p.stats.runningHits / p.stats.totalRounds * 100);
-                
+              {hybridPatterns.map((h, idx) => {
+                const isBest = h.isActiveMaster;
+                const isQualified = h.isQualified;
+                const historicalAccuracy = h.historicalStats.directAccuracy;
+                const currentAccuracy = h.currentStats.directAccuracy;
+                const maxConsecutive = h.historicalStats.maxConsecutiveHits;
+                const currentConsecutive = h.currentStats.maxConsecutiveHits;
+                const stability = h.stabilityScore;
+
                 return (
-                  <div 
-                    key={p.name} 
+                  <div
+                    key={h.pattern.name}
                     className={`group relative flex flex-col md:flex-row items-center justify-between p-5 rounded-[1.5rem] border transition-all duration-500 ${
-                      isBest 
-                        ? 'bg-gradient-to-r from-emerald-500/15 via-emerald-500/5 to-transparent border-emerald-500/40 shadow-xl shadow-emerald-500/10' 
+                      isBest
+                        ? 'bg-gradient-to-r from-emerald-500/15 via-emerald-500/5 to-transparent border-emerald-500/40 shadow-xl shadow-emerald-500/10'
+                        : isQualified
+                        ? 'bg-slate-900/50 border-cyan-500/30 hover:border-cyan-500/50 hover:bg-slate-900/70'
                         : 'bg-slate-900/40 border-slate-800/60 hover:border-slate-700 hover:bg-slate-900/60'
                     }`}
                   >
                     <div className="flex items-center gap-6 mb-4 md:mb-0 w-full md:w-auto">
                       <div className={`relative flex items-center justify-center w-12 h-12 rounded-2xl font-black text-xl transition-transform group-hover:scale-110 ${
-                        isBest ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/30' : 'bg-slate-800 text-slate-500'
+                        isBest ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/30' : 
+                        isQualified ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30' :
+                        'bg-slate-800 text-slate-500'
                       }`}>
                         {idx + 1}
                       </div>
-                      
+
                       <div className="flex-1">
                         <div className="flex items-center gap-3">
-                          <h4 className={`text-lg font-black tracking-tight ${isBest ? 'text-white' : 'text-slate-300'}`}>
-                            {p.name}
+                          <h4 className={`text-lg font-black tracking-tight ${isBest ? 'text-white' : isQualified ? 'text-cyan-300' : 'text-slate-300'}`}>
+                            {h.pattern.name}
                           </h4>
-                          {isBest && (
-                            <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 rounded text-[9px] font-black uppercase tracking-tighter">
-                              Active Master
-                            </span>
-                          )}
+                          <div className="flex gap-2">
+                            {isBest && (
+                              <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 rounded text-[9px] font-black uppercase tracking-tighter animate-pulse">
+                                👑 Active Master
+                              </span>
+                            )}
+                            {isQualified && !isBest && (
+                              <span className="px-2 py-0.5 bg-cyan-500/20 text-cyan-400 border border-cyan-500/20 rounded text-[9px] font-black uppercase tracking-tighter">
+                                ✓ Stable
+                              </span>
+                            )}
+                            {!isQualified && (
+                              <span className="px-2 py-0.5 bg-red-500/10 text-red-400 border border-red-500/20 rounded text-[9px] font-black uppercase tracking-tighter">
+                                ✗ Unstable
+                              </span>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex items-center gap-4 mt-1">
-                          <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Neural Stream</span>
-                          <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">ID: AX-{accuracy.toFixed(0)}</span>
+                        
+                        {/* HYBRID INFO */}
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-2">
+                          <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">
+                            Stability: <span className={stability >= 70 ? 'text-emerald-400' : stability >= 50 ? 'text-amber-400' : 'text-red-400'}>{stability}%</span>
+                          </span>
+                          <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">
+                            Max Consecutive: <span className={maxConsecutive >= 6 ? 'text-emerald-400' : 'text-red-400'}>{maxConsecutive} งวด</span>
+                          </span>
+                          <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">
+                            Current: <span className={currentConsecutive >= 6 ? 'text-emerald-400' : currentConsecutive >= 4 ? 'text-amber-400' : 'text-red-400'}>{currentConsecutive} งวด</span>
+                          </span>
                         </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between w-full md:w-auto gap-8 border-t border-slate-800 md:border-t-0 pt-4 md:pt-0">
-                      <div className="flex gap-8">
+                    <div className="flex items-center justify-between w-full md:w-auto gap-6 border-t border-slate-800 md:border-t-0 pt-4 md:pt-0">
+                      <div className="flex gap-6">
+                        {/* Historical Accuracy */}
                         <div className="text-center md:text-right">
-                          <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Direct</p>
-                          <div className={`text-2xl font-black ${isBest ? 'text-emerald-400' : 'text-white'}`}>
-                            {accuracy.toFixed(1)}<span className="text-xs ml-0.5 opacity-50">%</span>
+                          <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Historical (30)</p>
+                          <div className={`text-xl font-black ${isBest ? 'text-emerald-400' : isQualified ? 'text-cyan-400' : 'text-white'}`}>
+                            {historicalAccuracy.toFixed(1)}<span className="text-xs ml-0.5 opacity-50">%</span>
                           </div>
                         </div>
                         
+                        {/* Current Accuracy */}
                         <div className="text-center md:text-right">
-                          <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Running</p>
-                          <div className="text-2xl font-black text-slate-400">
-                            {running.toFixed(1)}<span className="text-xs ml-0.5 opacity-50">%</span>
+                          <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Current (10)</p>
+                          <div className={`text-xl font-black ${
+                            currentAccuracy >= historicalAccuracy ? 'text-emerald-400' : 'text-amber-400'
+                          }`}>
+                            {currentAccuracy.toFixed(1)}<span className="text-xs ml-0.5 opacity-50">%</span>
                           </div>
+                        </div>
+
+                        {/* Trending Indicator */}
+                        <div className="flex items-center">
+                          {currentAccuracy >= historicalAccuracy + 5 ? (
+                            <span className="text-2xl text-emerald-400" title="Trending Up">📈</span>
+                          ) : currentAccuracy <= historicalAccuracy - 5 ? (
+                            <span className="text-2xl text-red-400" title="Trending Down">📉</span>
+                          ) : (
+                            <span className="text-2xl text-amber-400" title="Stable">➡️</span>
+                          )}
                         </div>
                       </div>
 
+                      {/* Stability Bar */}
                       <div className="hidden lg:block w-32 ml-4">
                         <div className="flex justify-between text-[8px] font-black text-slate-600 uppercase mb-2">
-                          <span>Confidence</span>
-                          <span>{combined.toFixed(0)}%</span>
+                          <span>Stability</span>
+                          <span>{stability}%</span>
                         </div>
                         <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
-                          <div 
-                            className={`h-full transition-all duration-1000 ease-out ${isBest ? 'bg-emerald-500' : 'bg-slate-600'}`} 
-                            style={{ width: `${combined}%` }}
+                          <div
+                            className={`h-full transition-all duration-1000 ease-out ${
+                              stability >= 70 ? 'bg-emerald-500' : 
+                              stability >= 50 ? 'bg-amber-500' : 
+                              'bg-red-500'
+                            }`}
+                            style={{ width: `${stability}%` }}
                           ></div>
                         </div>
                       </div>
@@ -414,6 +613,33 @@ import {
                   </div>
                 );
               })}
+            </div>
+            
+            {/* HYBRID EXPLANATION */}
+            <div className="mt-6 p-4 bg-slate-900/40 rounded-2xl border border-slate-800">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-[10px]">
+                <div className="flex items-start gap-2">
+                  <span className="text-emerald-400 font-black">🟢</span>
+                  <div>
+                    <p className="font-black text-slate-400 uppercase">Active Master</p>
+                    <p className="text-slate-600">เปลี่ยนเฉพาะเมื่อล้มเหลว หรือมีสูตรที่ดีกว่า 10%+</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="text-cyan-400 font-black">🔵</span>
+                  <div>
+                    <p className="font-black text-slate-400 uppercase">Stable</p>
+                    <p className="text-slate-600">Max Consecutive ≥ 6 งวด มีความน่าเชื่อถือ</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="text-red-400 font-black">🔴</span>
+                  <div>
+                    <p className="font-black text-slate-400 uppercase">Unstable</p>
+                    <p className="text-slate-600">Max Consecutive {'<'} 6 งวด ควรหลีกเลี่ยง</p>
+                  </div>
+                </div>
+              </div>
             </div>
           </section>
 
