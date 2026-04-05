@@ -877,13 +877,13 @@ export function filterPatternsByConsecutive(
  * HYBRID ANALYSIS - วิเคราะห์ทั้ง Historical + Current + Stability
  * @param results ข้อมูลหวยย้อนหลังทั้งหมด
  * @param currentMasterPattern สูตรที่เป็น Active Master อยู่ (ถ้ามี)
- * @param minConsecutive จำนวนงวดติดต่อกันขั้นต่ำ (default: 6)
+ * @param minConsecutive จำนวนงวดติดต่อกันขั้นต่ำ (default: 4)
  * @returns ข้อมูล Hybrid ของทุกสูตร
  */
 export function analyzeHybridPatterns(
   results: LottoResult[],
   currentMasterPattern?: Pattern,
-  minConsecutive: number = 6
+  minConsecutive: number = 4
 ): Array<import('../types').HybridPatternInfo> {
   const hybridResults: Array<import('../types').HybridPatternInfo> = [];
 
@@ -938,7 +938,7 @@ export function analyzeHybridPatterns(
 /**
  * เลือก Active Master ด้วยกฎ Hybrid Approach
  * - เปลี่ยนสูตรเฉพาะเมื่อ:
- *   1. สูตรปัจจุบัน maxConsecutive < 6 (ล้มเหลว) หรือ
+ *   1. สูตรปัจจุบัน maxConsecutive < 4 (ล้มเหลว) หรือ
  *   2. สูตรใหม่ดีกว่าอย่างน้อย 10% และ stable
  */
 function selectHybridMaster(

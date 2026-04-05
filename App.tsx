@@ -1,4 +1,4 @@
-
+﻿
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -32,6 +32,24 @@ import {
   const [allPatternStats, setAllPatternStats] = useState<Array<{ name: string, stats: BacktestResult }>>([]);
   const [hybridPatterns, setHybridPatterns] = useState<Array<HybridPatternInfo>>([]);
   const [repeatAnalysis, setRepeatAnalysis] = useState<RepeatAnalysis | null>(null);
+
+  // NEW: Algorithm Leaderboard - เก็บเลขทำนายของทุกสูตร
+  const [allPatternPredictions, setAllPatternPredictions] = useState<Array<{
+    name: string;
+    prediction: string;
+    isQualified: boolean;
+    isActiveMaster: boolean;
+    historicalAccuracy: number;
+    currentAccuracy: number;
+    maxConsecutive: number;
+    stabilityScore: number;
+    isRecentlyDrawn: boolean;       // NEW: เลขนี้ออกในงวดล่าสุดหรือไม่
+    lastDrawnDate: string;          // NEW: วันที่ออกครั้งล่าสุด
+    mirrorNumber: string;           // NEW: เลขกระจก
+    runningDigits: string[];        // NEW: Running digits
+  }>>([]);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [expandedPattern, setExpandedPattern] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -97,7 +115,7 @@ import {
 
     if (data.length > 0) {
       // HYBRID ANALYSIS - ต้องทำก่อน เพื่อเลือก Active Master ที่ถูกต้อง
-      const hybrid = analyzeHybridPatterns(data, undefined, 6); // ครั้งแรกไม่มี currentMaster
+      const hybrid = analyzeHybridPatterns(data, undefined, 4); // ครั้งแรกไม่มี currentMaster
       setHybridPatterns(hybrid);
       
       // เลือก Active Master ที่ดีที่สุด
@@ -184,6 +202,53 @@ import {
       stats.topT,
       stats.topU
     );
+
+    // NEW: บันทึกเลขทำนายของทุกสูตรสำหรับ Algorithm Leaderboard
+    const latestResult = allData[0];
+    const latestR2 = latestResult.r2.padStart(2, '0');
+    const latestDrawnDate = latestResult.date;
+
+    // ดึงเลขที่ออกใน 5 งวดล่าสุดเพื่อตรวจสอบ
+    const recentDrawnNumbers = allData.slice(0, 5).map(r => r.r2.padStart(2, '0'));
+
+    const patternPredictions = allPredictions.map(pred => {
+      const hybridInfo = hybridPatterns.find(h => h.pattern.name === pred.name);
+      const predictionNum = pred.value.padStart(2, '0');
+
+      // ตรวจสอบว่าเลขที่ทำนายออกในงวดล่าสุดหรือไม่
+      const isRecentlyDrawn = predictionNum === latestR2;
+      const wasDrawnRecently = recentDrawnNumbers.includes(predictionNum);
+
+      // คำนวณเลขกระจก
+      const predNumInt = parseInt(predictionNum, 10);
+      const mirrorStr = getMirror(predictionNum);
+
+      // คำนวณ running digits
+      const tens = predictionNum[0];
+      const units = predictionNum[1];
+      const runningDigits = [
+        tens + '0', tens + '1', tens + '2', tens + '3', tens + '4',
+        tens + '5', tens + '6', tens + '7', tens + '8', tens + '9',
+        '0' + units, '1' + units, '2' + units, '3' + units, '4' + units,
+        '5' + units, '6' + units, '7' + units, '8' + units, '9' + units
+      ].filter(d => d !== predictionNum).slice(0, 10);
+
+      return {
+        name: pred.name,
+        prediction: pred.value,
+        isQualified: hybridInfo?.isQualified || false,
+        isActiveMaster: hybridInfo?.isActiveMaster || false,
+        historicalAccuracy: hybridInfo?.historicalStats.directAccuracy || 0,
+        currentAccuracy: hybridInfo?.currentStats.directAccuracy || 0,
+        maxConsecutive: hybridInfo?.historicalStats.maxConsecutiveHits || 0,
+        stabilityScore: hybridInfo?.stabilityScore || 0,
+        isRecentlyDrawn: isRecentlyDrawn,
+        lastDrawnDate: wasDrawnRecently ? latestDrawnDate : '',
+        mirrorNumber: mirrorStr,
+        runningDigits: runningDigits
+      };
+    });
+    setAllPatternPredictions(patternPredictions);
 
     console.log('   ✅ Setting manualRes:', {
       primary: resPri,
@@ -444,6 +509,12 @@ import {
                 <button onClick={autoCalculate} className="btn-sync !py-1.5 !px-4">
                   RE-ANALYZE
                 </button>
+                <button 
+                  onClick={() => setShowLeaderboard(!showLeaderboard)} 
+                  className="btn-sync !py-1.5 !px-4 !bg-purple-600/20 !border-purple-500/30 hover:!bg-purple-600/30"
+                >
+                  {showLeaderboard ? '👁️ HIDE' : ' ALGORITHM LEADERBOARD'}
+                </button>
               </div>
             </div>
 
@@ -541,19 +612,19 @@ import {
                           </h4>
                           <div className="flex gap-2">
                             {isBest && (
-                              <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 rounded text-[9px] font-black uppercase tracking-tighter animate-pulse">
-                                👑 Active Master
-                              </span>
+                              <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-500/20 border border-emerald-500/30 animate-pulse" title="Active Master">
+                                <span className="text-lg">👑</span>
+                              </div>
                             )}
                             {isQualified && !isBest && (
-                              <span className="px-2 py-0.5 bg-cyan-500/20 text-cyan-400 border border-cyan-500/20 rounded text-[9px] font-black uppercase tracking-tighter">
-                                ✓ Stable
-                              </span>
+                              <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-500/10 border border-emerald-500/20" title="Qualified">
+                                <span className="text-sm text-emerald-400 font-black">✓</span>
+                              </div>
                             )}
                             {!isQualified && (
-                              <span className="px-2 py-0.5 bg-red-500/10 text-red-400 border border-red-500/20 rounded text-[9px] font-black uppercase tracking-tighter">
-                                ✗ Unstable
-                              </span>
+                              <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-500/10 border border-red-500/20" title="Unstable">
+                                <span className="text-sm text-red-400 font-black">✗</span>
+                              </div>
                             )}
                           </div>
                         </div>
@@ -632,29 +703,375 @@ import {
             <div className="mt-6 p-4 bg-slate-900/40 rounded-2xl border border-slate-800">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-[10px]">
                 <div className="flex items-start gap-2">
-                  <span className="text-emerald-400 font-black">🟢</span>
+                  <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-500/20 border border-emerald-500/30 animate-pulse flex-shrink-0">
+                    <span className="text-lg">👑</span>
+                  </div>
                   <div>
                     <p className="font-black text-slate-400 uppercase">Active Master</p>
                     <p className="text-slate-600">เปลี่ยนเฉพาะเมื่อล้มเหลว หรือมีสูตรที่ดีกว่า 10%+</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-2">
-                  <span className="text-cyan-400 font-black">🔵</span>
+                  <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex-shrink-0">
+                    <span className="text-sm text-emerald-400 font-black">✓</span>
+                  </div>
                   <div>
-                    <p className="font-black text-slate-400 uppercase">Stable</p>
-                    <p className="text-slate-600">Max Consecutive ≥ 6 งวด มีความน่าเชื่อถือ</p>
+                    <p className="font-black text-slate-400 uppercase">Qualified</p>
+                    <p className="text-slate-600">Max Consecutive ≥ 4 งวด มีความน่าเชื่อถือ</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-2">
-                  <span className="text-red-400 font-black">🔴</span>
+                  <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-500/10 border border-red-500/20 flex-shrink-0">
+                    <span className="text-sm text-red-400 font-black">✗</span>
+                  </div>
                   <div>
                     <p className="font-black text-slate-400 uppercase">Unstable</p>
-                    <p className="text-slate-600">Max Consecutive {'<'} 6 งวด ควรหลีกเลี่ยง</p>
+                    <p className="text-slate-600">Max Consecutive {'<'} 4 งวด ควรหลีกเลี่ยง</p>
                   </div>
                 </div>
               </div>
             </div>
           </section>
+
+          {/* NEW: Algorithm Leaderboard - แสดงเลขทำนายของแต่ละสูตร */}
+          {showLeaderboard && allPatternPredictions.length > 0 && (
+            <section className="glass-card">
+              <div className="flex justify-between items-center mb-8">
+                <div>
+                  <h3 className="text-xl font-black text-white tracking-tight">🎯 Algorithm Leaderboard - เลขทำนายล่าสุด</h3>
+                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">
+                    เปรียบเทียบเลขที่แต่ละสูตรทำนาย พร้อมสถิติย้อนหลัง
+                  </p>
+                </div>
+                <button 
+                  onClick={() => setShowLeaderboard(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-sm font-black text-slate-400 transition-colors"
+                >
+                  ✕ ปิด
+                </button>
+              </div>
+
+              {/* ตารางแสดงเลขทำนาย */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-800">
+                      <th className="text-left py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">อันดับ</th>
+                      <th className="text-left py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">สูตร</th>
+                      <th className="text-center py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">เลขทำนาย</th>
+                      <th className="text-center py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">สถานะ</th>
+                      <th className="text-center py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Hist (30)</th>
+                      <th className="text-center py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Curr (10)</th>
+                      <th className="text-center py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Max Streak</th>
+                      <th className="text-center py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Stability</th>
+                      <th className="text-center py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">รายละเอียด</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {allPatternPredictions
+                      .sort((a, b) => {
+                        // เรียงตาม: Active Master ก่อน, ตามด้วย Qualified, แล้วตาม historicalAccuracy
+                        if (a.isActiveMaster && !b.isActiveMaster) return -1;
+                        if (!a.isActiveMaster && b.isActiveMaster) return 1;
+                        if (a.isQualified && !b.isQualified) return -1;
+                        if (!a.isQualified && b.isQualified) return 1;
+                        return b.historicalAccuracy - a.historicalAccuracy;
+                      })
+                      .map((pattern, idx) => (
+                        <tr 
+                          key={pattern.name}
+                          className={`border-b border-slate-800/50 transition-colors ${
+                            pattern.isActiveMaster 
+                              ? 'bg-emerald-500/10 hover:bg-emerald-500/15' 
+                              : pattern.isQualified
+                              ? 'bg-slate-900/30 hover:bg-slate-900/50'
+                              : 'hover:bg-slate-900/30'
+                          }`}
+                        >
+                          <td className="py-3 px-4">
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-black text-sm ${
+                              pattern.isActiveMaster 
+                                ? 'bg-emerald-500 text-slate-950' 
+                                : pattern.isQualified
+                                ? 'bg-cyan-500/20 text-cyan-400'
+                                : 'bg-slate-800 text-slate-500'
+                            }`}>
+                              {idx + 1}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className={`font-black text-sm ${
+                              pattern.isActiveMaster 
+                                ? 'text-emerald-400' 
+                                : pattern.isQualified
+                                ? 'text-cyan-300'
+                                : 'text-slate-400'
+                            }`}>
+                              {pattern.name}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            <div className="flex flex-col items-center gap-1">
+                              <div className={`inline-flex items-center justify-center w-16 h-10 rounded-lg font-black text-lg ${
+                                pattern.isRecentlyDrawn
+                                  ? 'bg-red-500/30 border-2 border-red-500/50 text-red-400'
+                                  : 'bg-slate-800 text-white'
+                              }`}>
+                                {pattern.prediction}
+                              </div>
+                              {pattern.isRecentlyDrawn && (
+                                <span className="text-[8px] font-black text-red-400 uppercase tracking-tighter animate-pulse">
+                                  ⚠️ ออกแล้ว!
+                                </span>
+                              )}
+                              {pattern.isRecentlyDrawn && (
+                                <div className="flex gap-1 mt-1">
+                                  <span className="text-[8px] text-slate-500">ทางเลือก:</span>
+                                  <span className="text-[9px] font-black text-cyan-400">{pattern.mirrorNumber}</span>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            {pattern.isActiveMaster ? (
+                              <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-emerald-500/20 border border-emerald-500/30 animate-pulse">
+                                <span className="text-2xl" title="Active Master">👑</span>
+                              </div>
+                            ) : pattern.isQualified ? (
+                              <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+                                <span className="text-xl text-emerald-400 font-black" title="Qualified">✓</span>
+                              </div>
+                            ) : (
+                              <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-red-500/10 border border-red-500/20">
+                                <span className="text-xl text-red-400 font-black" title="Unstable">✗</span>
+                              </div>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            <div className={`text-sm font-black ${
+                              pattern.historicalAccuracy >= 10 ? 'text-emerald-400' : 
+                              pattern.historicalAccuracy >= 5 ? 'text-amber-400' : 'text-slate-400'
+                            }`}>
+                              {pattern.historicalAccuracy.toFixed(1)}%
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            <div className={`text-sm font-black ${
+                              pattern.currentAccuracy >= 10 ? 'text-emerald-400' : 
+                              pattern.currentAccuracy >= 5 ? 'text-amber-400' : 'text-slate-400'
+                            }`}>
+                              {pattern.currentAccuracy.toFixed(1)}%
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            <div className={`text-sm font-black ${
+                              pattern.maxConsecutive >= 6 ? 'text-emerald-400' : 
+                              pattern.maxConsecutive >= 4 ? 'text-amber-400' : 'text-red-400'
+                            }`}>
+                              {pattern.maxConsecutive} งวด
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            <div className="flex items-center justify-center gap-2">
+                              <div className="w-16 h-2 bg-slate-800 rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full transition-all duration-1000 ${
+                                    pattern.stabilityScore >= 70 ? 'bg-emerald-500' :
+                                    pattern.stabilityScore >= 50 ? 'bg-amber-500' :
+                                    'bg-red-500'
+                                  }`}
+                                  style={{ width: `${pattern.stabilityScore}%` }}
+                                ></div>
+                              </div>
+                              <span className="text-xs font-black text-slate-500">{pattern.stabilityScore}%</span>
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            <button
+                              onClick={() => setExpandedPattern(expandedPattern === pattern.name ? null : pattern.name)}
+                              className="px-3 py-1 bg-purple-500/20 hover:bg-purple-500/30 text-purple-400 border border-purple-500/20 rounded text-[9px] font-black uppercase tracking-tighter transition-colors"
+                            >
+                              {expandedPattern === pattern.name ? '▲ ซ่อน' : '▼ ดู'}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* รายละเอียดขยายของแต่ละสูตร */}
+              {expandedPattern && (
+                <div className="mt-6 p-6 bg-slate-900/50 rounded-2xl border border-purple-500/30">
+                  {(() => {
+                    const pattern = allPatternPredictions.find(p => p.name === expandedPattern);
+                    if (!pattern) return null;
+
+                    const hybridInfo = hybridPatterns.find(h => h.pattern.name === pattern.name);
+                    const backtestHits = hybridInfo?.historicalStats.hits || [];
+
+                    return (
+                      <div>
+                        <h4 className="text-lg font-black text-purple-400 mb-4">
+                          📊 รายละเอียด: {pattern.name}
+                        </h4>
+
+                        {/* คำเตือนถ้าเลขออกแล้ว */}
+                        {pattern.isRecentlyDrawn && (
+                          <div className="mb-6 p-4 bg-red-500/10 border-2 border-red-500/30 rounded-xl">
+                            <div className="flex items-center gap-3">
+                              <span className="text-3xl">⚠️</span>
+                              <div>
+                                <p className="text-sm font-black text-red-400">
+                                  เลข {pattern.prediction} ออกในงวดล่าสุดแล้ว!
+                                </p>
+                                <p className="text-xs text-slate-400 mt-1">
+                                  วันที่ออก: {pattern.lastDrawnDate} | ไม่แนะนำให้ใช้เลขนี้
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                          <div className={`p-4 rounded-xl ${
+                            pattern.isRecentlyDrawn 
+                              ? 'bg-red-500/10 border-2 border-red-500/30' 
+                              : 'bg-slate-800/50'
+                          }`}>
+                            <p className="text-[10px] font-black text-slate-500 uppercase mb-1">เลขทำนาย</p>
+                            <p className={`text-3xl font-black ${
+                              pattern.isRecentlyDrawn ? 'text-red-400' : 'text-white'
+                            }`}>
+                              {pattern.prediction}
+                            </p>
+                            {pattern.isRecentlyDrawn && (
+                              <p className="text-[9px] font-black text-red-400 mt-2">⚠️ ออกแล้ว!</p>
+                            )}
+                          </div>
+                          <div className="p-4 bg-slate-800/50 rounded-xl">
+                            <p className="text-[10px] font-black text-slate-500 uppercase mb-1">เลขกระจก (ทางเลือก)</p>
+                            <p className="text-3xl font-black text-cyan-400">{pattern.mirrorNumber}</p>
+                            <p className="text-[9px] text-slate-500 mt-2">แนะนำถ้าเลขหลักออกแล้ว</p>
+                          </div>
+                          <div className="p-4 bg-slate-800/50 rounded-xl">
+                            <p className="text-[10px] font-black text-slate-500 uppercase mb-1">ความแม่นยำ (30 งวด)</p>
+                            <p className="text-3xl font-black text-emerald-400">{pattern.historicalAccuracy.toFixed(1)}%</p>
+                          </div>
+                          <div className="p-4 bg-slate-800/50 rounded-xl">
+                            <p className="text-[10px] font-black text-slate-500 uppercase mb-1">ความแม่นยำ (10 งวด)</p>
+                            <p className="text-3xl font-black text-cyan-400">{pattern.currentAccuracy.toFixed(1)}%</p>
+                          </div>
+                        </div>
+
+                        {/* Running Digits Alternatives */}
+                        {pattern.isRecentlyDrawn && (
+                          <div className="mb-6 p-4 bg-cyan-500/10 border border-cyan-500/30 rounded-xl">
+                            <h5 className="text-sm font-black text-cyan-400 uppercase mb-3">
+                              🔄 Running Digits - เลขทางเลือก (10 ตัว)
+                            </h5>
+                            <div className="grid grid-cols-10 gap-2">
+                              {pattern.runningDigits.map((digit, idx) => (
+                                <div
+                                  key={idx}
+                                  className="p-2 bg-slate-800/50 rounded-lg text-center"
+                                >
+                                  <span className="text-lg font-black text-white">{digit}</span>
+                                </div>
+                              ))}
+                            </div>
+                            <p className="text-[9px] text-slate-500 mt-2">
+                              ใช้หลักสิบหรือหลักหน่วยจากเลขที่ทำนาย ผสมกับ 0-9
+                            </p>
+                          </div>
+                        )}
+
+                        <h5 className="text-sm font-black text-slate-400 uppercase mb-3">📈 ผลย้อนหลัง 10 งวดล่าสุด</h5>
+                        <div className="grid grid-cols-5 md:grid-cols-10 gap-2">
+                          {backtestHits.slice(0, 10).map((hit, idx) => (
+                            <div
+                              key={idx}
+                              className={`p-3 rounded-xl text-center ${
+                                hit.isDirect
+                                  ? 'bg-emerald-500/20 border border-emerald-500/30'
+                                  : hit.isRunning
+                                  ? 'bg-amber-500/20 border border-amber-500/30'
+                                  : 'bg-red-500/10 border border-red-500/20'
+                              }`}
+                            >
+                              <p className="text-[9px] font-black text-slate-500 mb-1">{hit.date.slice(0, 5)}</p>
+                              <p className="text-sm font-black text-white">{hit.predicted.toString().padStart(2, '0')}</p>
+                              <p className="text-[9px] text-slate-500 mt-1">→ {hit.actual.toString().padStart(2, '0')}</p>
+                              {hit.isDirect && (
+                                <span className="text-[9px] font-black text-emerald-400">✓ ถูก</span>
+                              )}
+                              {hit.isRunning && !hit.isDirect && (
+                                <span className="text-[9px] font-black text-amber-400">~ รันนิ่ง</span>
+                              )}
+                              {!hit.isDirect && !hit.isRunning && (
+                                <span className="text-[9px] font-black text-red-400">✗ ผิด</span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {/* คำอธิบายสัญลักษณ์ */}
+              <div className="mt-6 p-4 bg-slate-900/40 rounded-2xl border border-slate-800">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-[10px]">
+                  <div className="flex items-start gap-2">
+                    <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-500/20 border border-emerald-500/30 animate-pulse flex-shrink-0">
+                      <span className="text-lg">👑</span>
+                    </div>
+                    <div>
+                      <p className="font-black text-slate-400 uppercase">Active Master</p>
+                      <p className="text-slate-600">สูตรหลักที่ทำนายงวดถัดไป</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex-shrink-0">
+                      <span className="text-sm text-emerald-400 font-black">✓</span>
+                    </div>
+                    <div>
+                      <p className="font-black text-slate-400 uppercase">Qualified</p>
+                      <p className="text-slate-600">Max Streak ≥ 4 งวด</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-500/10 border border-red-500/20 flex-shrink-0">
+                      <span className="text-sm text-red-400 font-black">✗</span>
+                    </div>
+                    <div>
+                      <p className="font-black text-slate-400 uppercase">Unstable</p>
+                      <p className="text-slate-600">Max Streak {'<'} 4 งวด</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <div className="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-red-500/30 border-2 border-red-500/50 flex-shrink-0">
+                      <span className="text-sm font-black text-red-400">49</span>
+                    </div>
+                    <div>
+                      <p className="font-black text-slate-400 uppercase">ออกแล้ว!</p>
+                      <p className="text-slate-600">เลขตรงผลหวยล่าสุด</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-purple-500/20 border border-purple-500/30 flex-shrink-0">
+                      <span className="text-sm text-purple-400 font-black">▼</span>
+                    </div>
+                    <div>
+                      <p className="font-black text-slate-400 uppercase">ดูรายละเอียด</p>
+                      <p className="text-slate-600">ผลย้อนหลัง + เลขทางเลือก</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
 
           {/* Charts Section */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
