@@ -232,6 +232,141 @@ export const fetchLottoData = async (): Promise<LottoResult[]> => {
 
 export const PATTERNS: Pattern[] = [
   {
+    name: "N-Gram Pattern (รูปแบบลำดับ)",
+    calc: (p, l, l4, results?) => {
+      /**
+       * N-GRAM PATTERN MATCHING
+       * หารูปแบบจากลำดับ 2-3 งวดที่คล้ายกัน
+       * 
+       * หลักการ:
+       * - จำดูลำดับของเลข 2-3 งวดก่อนหน้า
+       * - หาลำดับที่คล้ายที่สุดในอดีต
+       * - ดูว่าหลังจากลำดับนั้น ออกเลขอะไร
+       */
+      if (!results || results.length < 10) {
+        const tens = (Math.floor(l / 10) + 2) % 10;
+        const units = ((l % 10) + 5) % 10;
+        return (tens * 10) + units;
+      }
+      
+      const ngramLength = 3; // ดู 3 งวดล่าสุด
+      const currentSequence: number[] = [l, p];
+      if (results.length >= 3) {
+        currentSequence.push(parseInt(results[2].r2, 10));
+      }
+      
+      // ค้นหาลำดับที่คล้ายกันในอดีต
+      const matches: Array<{ sequence: number[], nextNumber: number, similarity: number }> = [];
+      
+      for (let i = 2; i < results.length - 1 && i < 50; i++) {
+        const histSequence: number[] = [
+          parseInt(results[i].r2, 10),
+          parseInt(results[i - 1]?.r2 || '0', 10),
+          parseInt(results[i - 2]?.r2 || '0', 10)
+        ];
+        
+        // คำนวณความคล้าย (inverse distance)
+        let distance = 0;
+        for (let j = 0; j < Math.min(currentSequence.length, histSequence.length); j++) {
+          distance += Math.abs(currentSequence[j] - histSequence[j]);
+        }
+        
+        const similarity = 1 / (1 + distance);
+        const nextNumber = parseInt(results[i - 1]?.r2 || '0', 10);
+        
+        matches.push({ sequence: histSequence, nextNumber, similarity });
+      }
+      
+      // เรียงตามความคล้าย
+      matches.sort((a, b) => b.similarity - a.similarity);
+      
+      // เลือก top 5 matches
+      const topMatches = matches.slice(0, 5);
+      
+      // นับความถี่ของเลขที่ออกหลังจากลำดับที่คล้าย
+      const tensCount: number[] = Array(10).fill(0);
+      const unitsCount: number[] = Array(10).fill(0);
+      
+      topMatches.forEach(match => {
+        const tens = Math.floor(match.nextNumber / 10);
+        const units = match.nextNumber % 10;
+        tensCount[tens] += match.similarity;
+        unitsCount[units] += match.similarity;
+      });
+      
+      const predictedTens = tensCount.indexOf(Math.max(...tensCount));
+      const predictedUnits = unitsCount.indexOf(Math.max(...unitsCount));
+
+      return (predictedTens * 10) + predictedUnits;
+    }
+  },
+  {
+    name: "สูตรสถิติความถี่ (Hot Numbers)",
+    calc: (p, l, l4, results?) => {
+      /**
+       * สูตรสถิติความถี่ (Hot Numbers) - จาก social media
+       * ทดสอบแล้ว: Direct 19.35%, Max Consecutive 3 งวด
+       * 
+       * หลักการ:
+       * 1. ดู 20 งวดล่าสุด
+       * 2. นับความถี่หลักสิบและหลักหน่วยแยกกัน
+       * 3. เลือกเลขที่ออกบ่อยที่สุด 3 ตัว (หลักสิบ)
+       * 4. เลือกเลขที่ออกบ่อยที่สุด 3 ตัว (หลักหน่วย)
+       * 5. จับคู่และเลือกคู่ที่มีความถี่รวมสูงสุด
+       */
+      if (!results || results.length < 20) {
+        // Fallback ถ้าข้อมูลไม่พอ
+        const tens = (Math.floor(l / 10) + 4) % 10;
+        const units = ((l % 10) + 6) % 10;
+        return (tens * 10) + units;
+      }
+
+      const window = Math.min(20, results.length);
+      const recentData = results.slice(0, window);
+      
+      // ===== 1. นับความถี่หลักสิบและหลักหน่วย =====
+      const tensCount: number[] = Array(10).fill(0);
+      const unitsCount: number[] = Array(10).fill(0);
+      
+      recentData.forEach(r => {
+        const r2 = parseInt(r.r2, 10);
+        tensCount[Math.floor(r2 / 10)]++;
+        unitsCount[r2 % 10]++;
+      });
+      
+      // ===== 2. เลือกเลขที่ออกบ่อยที่สุด 3 ตัว =====
+      const topTens = tensCount
+        .map((count, digit) => ({ digit, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 3)
+        .map(x => x.digit);
+      
+      const topUnits = unitsCount
+        .map((count, digit) => ({ digit, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 3)
+        .map(x => x.digit);
+      
+      // ===== 3. จับคู่และเลือกคู่ที่มีความถี่รวมสูงสุด =====
+      // คำนวณคะแนนสำหรับแต่ละคู่
+      const pairs: Array<{ number: number, score: number }> = [];
+      
+      for (const tens of topTens) {
+        for (const units of topUnits) {
+          const number = (tens * 10) + units;
+          // คะแนน = ความถี่หลักสิบ + ความถี่หลักหน่วย
+          const score = tensCount[tens] + unitsCount[units];
+          pairs.push({ number, score });
+        }
+      }
+      
+      // เลือกคู่ที่มีคะแนนสูงสุด
+      pairs.sort((a, b) => b.score - a.score);
+      
+      return pairs[0].number;
+    }
+  },
+  {
     name: "Master 2-Digit (สูตรอมตะ)",
     calc: (p, l, l4) => {
       const s = l4 || l.toString().padStart(4, '0');
@@ -268,27 +403,6 @@ export const PATTERNS: Pattern[] = [
       const sumAll = s.split('').reduce((acc, curr) => acc + parseInt(curr, 10), 0);
       const tens = (sumAll + 5) % 10;
       const units = (parseInt(s[3], 10) + 9) % 10;
-      return (tens * 10) + units;
-    }
-  },
-  {
-    name: "Mirror Matrix (สูตรกระจก)",
-    calc: (p, l) => {
-      const s = l.toString().padStart(2, '0');
-      const m1 = parseInt(MIRRORS[s[0]] || '0', 10);
-      const m2 = parseInt(MIRRORS[s[1]] || '0', 10);
-      const tens = (m1 + 3) % 10;
-      const units = (m2 + 5) % 10;
-      return (tens * 10) + units;
-    }
-  },
-  {
-    name: "Golden Ratio (สูตรรวมโชค)",
-    calc: (p, l, l4) => {
-      const lastR2 = l;
-      const prevR2 = p;
-      const tens = (Math.floor(lastR2 / 10) + (prevR2 % 10) + 4) % 10;
-      const units = ((lastR2 % 10) + Math.floor(prevR2 / 10) + 8) % 10;
       return (tens * 10) + units;
     }
   },
@@ -339,51 +453,6 @@ export const PATTERNS: Pattern[] = [
       const predictedUnits = maxUnitsProb > 0 ? unitsTransitions.indexOf(maxUnitsProb) : (lastUnits + 3) % 10;
 
       return (predictedTens * 10) + predictedUnits;
-    }
-  },
-  {
-    name: "Weighted Frequency (วิเคราะห์ความถี่)",
-    calc: (p, l, l4, results?) => {
-      // Weighted Frequency Analysis: วิเคราะห์ความถี่พร้อมให้น้ำหนักข้อมูลล่าสุด
-      if (!results || results.length < 20) {
-        const tens = (Math.floor(l / 10) + 5) % 10;
-        const units = ((l % 10) + 8) % 10;
-        return (tens * 10) + units;
-      }
-
-      const tensCount: number[] = Array(10).fill(0);
-      const unitsCount: number[] = Array(10).fill(0);
-      const maxHistory = Math.min(50, results.length);
-
-      // Count frequencies with exponential recency weighting
-      for (let i = 0; i < maxHistory; i++) {
-        const r2 = parseInt(results[i].r2, 10);
-        const tens = Math.floor(r2 / 10);
-        const units = r2 % 10;
-        
-        // Exponential weight: newer data has more influence
-        const weight = Math.exp(-i / 15); // Decay factor
-        
-        tensCount[tens] += weight;
-        unitsCount[units] += weight;
-      }
-
-      // Find most frequent tens and units
-      let maxTensIdx = 0, maxUnitsIdx = 0;
-      let maxTensVal = -1, maxUnitsVal = -1;
-
-      for (let i = 0; i < 10; i++) {
-        if (tensCount[i] > maxTensVal) {
-          maxTensVal = tensCount[i];
-          maxTensIdx = i;
-        }
-        if (unitsCount[i] > maxUnitsVal) {
-          maxUnitsVal = unitsCount[i];
-          maxUnitsIdx = i;
-        }
-      }
-
-      return (maxTensIdx * 10) + maxUnitsIdx;
     }
   },
   {
@@ -554,109 +623,6 @@ export const PATTERNS: Pattern[] = [
       const finalUnits = unitsVotes.indexOf(Math.max(...unitsVotes));
       
       return (finalTens * 10) + finalUnits;
-    }
-  },
-  {
-    name: "MASTER ENSEMBLE (สูตรรวมพลัง)",
-    calc: (p, l, l4, results?) => {
-      /**
-       * MASTER ENSEMBLE - ใช้หลักการ 5 อย่างร่วมกัน:
-       * 1. Hot Numbers (30%) - เลขที่ออกบ่อยใน 30 งวดล่าสุด
-       * 2. Pattern Match (25%) - หารูปแบบที่ซ้ำ
-       * 3. Trend Following (20%) - ตามแนวโน้มล่าสุด
-       * 4. Gap Analysis (15%) - วิเคราะห์ช่องว่างการออก
-       * 5. Mirror Logic (10%) - เลขกระจกที่เกี่ยวข้อง
-       */
-      
-      if (!results || results.length < 20) {
-        // ถ้าข้อมูลไม่พอ ใช้สูตรง่าย
-        const tens = (Math.floor(l / 10) + 3) % 10;
-        const units = ((l % 10) + 7) % 10;
-        return (tens * 10) + units;
-      }
-
-      const tensScore: number[] = Array(10).fill(0);
-      const unitsScore: number[] = Array(10).fill(0);
-
-      // 1. HOT NUMBERS (30%)
-      const hotWindow = Math.min(30, results.length);
-      const tensCount: number[] = Array(10).fill(0);
-      const unitsCount: number[] = Array(10).fill(0);
-      
-      for (let i = 0; i < hotWindow; i++) {
-        const r2 = parseInt(results[i].r2, 10);
-        tensCount[Math.floor(r2 / 10)]++;
-        unitsCount[r2 % 10]++;
-      }
-      
-      // Normalize and score (hot numbers get higher scores)
-      const maxTensCount = Math.max(...tensCount);
-      const maxUnitsCount = Math.max(...unitsCount);
-      for (let i = 0; i < 10; i++) {
-        tensScore[i] += (tensCount[i] / maxTensCount) * 30;
-        unitsScore[i] += (unitsCount[i] / maxUnitsCount) * 30;
-      }
-
-      // 2. PATTERN MATCH (25%) - หารูปแบบที่ซ้ำ
-      const lastTens = Math.floor(l / 10);
-      const lastUnits = l % 10;
-      
-      for (let i = 0; i < results.length - 1; i++) {
-        const histR2 = parseInt(results[i].r2, 10);
-        const histTens = Math.floor(histR2 / 10);
-        const histUnits = histR2 % 10;
-        
-        // If historical tens matches current tens, check what came next
-        if (histTens === lastTens && i > 0) {
-          const nextR2 = parseInt(results[i - 1].r2, 10);
-          const nextTens = Math.floor(nextR2 / 10);
-          const nextUnits = nextR2 % 10;
-          tensScore[nextTens] += 3;
-          unitsScore[nextUnits] += 3;
-        }
-      }
-
-      // 3. TREND FOLLOWING (20%) - ดู 5 งวดล่าสุด
-      const recentCount = Math.min(5, results.length);
-      for (let i = 0; i < recentCount; i++) {
-        const r2 = parseInt(results[i].r2, 10);
-        const weight = (recentCount - i) / recentCount; // More recent = higher weight
-        tensScore[Math.floor(r2 / 10)] += weight * 10;
-        unitsScore[r2 % 10] += weight * 10;
-      }
-
-      // 4. GAP ANALYSIS (15%) - ตัวที่หายไปนาน มีโอกาสออก
-      for (let digit = 0; digit < 10; digit++) {
-        let lastSeenTens = -1;
-        let lastSeenUnits = -1;
-        
-        for (let i = 0; i < results.length; i++) {
-          const r2 = parseInt(results[i].r2, 10);
-          if (Math.floor(r2 / 10) === digit && lastSeenTens === -1) {
-            lastSeenTens = i;
-          }
-          if (r2 % 10 === digit && lastSeenUnits === -1) {
-            lastSeenUnits = i;
-          }
-          if (lastSeenTens !== -1 && lastSeenUnits !== -1) break;
-        }
-        
-        // Longer gap = higher score (due theory)
-        if (lastSeenTens > 5) tensScore[digit] += (lastSeenTens / results.length) * 15;
-        if (lastSeenUnits > 5) unitsScore[digit] += (lastSeenUnits / results.length) * 15;
-      }
-
-      // 5. MIRROR LOGIC (10%)
-      const mirrorTens = parseInt(MIRRORS[lastTens.toString()] || '0', 10);
-      const mirrorUnits = parseInt(MIRRORS[lastUnits.toString()] || '0', 10);
-      tensScore[mirrorTens] += 10;
-      unitsScore[mirrorUnits] += 10;
-
-      // Select highest scoring digits
-      const predictedTens = tensScore.indexOf(Math.max(...tensScore));
-      const predictedUnits = unitsScore.indexOf(Math.max(...unitsScore));
-
-      return (predictedTens * 10) + predictedUnits;
     }
   }
 ];
@@ -901,11 +867,21 @@ export function analyzeHybridPatterns(
     // สูตรที่มี performance คงที่ระหว่าง historical vs current จะได้คะแนนสูง
     const accuracyDiff = Math.abs(historicalStats.directAccuracy - currentStats.directAccuracy);
     const consecutiveDiff = Math.abs(historicalStats.maxConsecutiveHits - currentStats.maxConsecutiveHits);
-    
+
     // Stability = 100 - (ความแตกต่างของ accuracy + ความแตกต่างของ consecutive)
-    const stabilityScore = Math.max(0, Math.min(100, 
+    let stabilityScore = Math.max(0, Math.min(100,
       100 - (accuracyDiff * 2) - (consecutiveDiff * 5)
     ));
+
+    // ⚠️ IMPORTANT: ถ้า Historical Accuracy ต่ำมาก (< 5%) แสดงว่าสูตรไม่ทำงาน
+    // Stability ควรต่ำด้วย แม้ Historical = Current ก็ตาม
+    if (historicalStats.directAccuracy < 5 && currentStats.directAccuracy < 5) {
+      // ถ้าทั้งสองค่าต่ำมาก ให้ Stability = 0% (ไม่มีความน่าเชื่อถือ)
+      stabilityScore = 0;
+    } else if (historicalStats.directAccuracy < 10 || currentStats.directAccuracy < 10) {
+      // ถ้าค่าใดค่าหนึ่งต่ำ (< 10%) ให้ปรับ Stability ลง 50%
+      stabilityScore = stabilityScore * 0.5;
+    }
 
     hybridResults.push({
       pattern,
@@ -917,18 +893,19 @@ export function analyzeHybridPatterns(
     });
   });
 
-  // เลือก Active Master ด้วยกฎ Hybrid
-  let selectedMaster = selectHybridMaster(hybridResults, currentMasterPattern);
-  
+  // เลือก Active Master ด้วยกฎ Hybrid แบบใหม่
+  // ใช้คะแนนรวม: Current (40%) + Stability (30%) + Historical (20%) + Trend (10%)
+  let selectedMaster = selectHybridMasterV2(hybridResults, currentMasterPattern);
+
   // เซ็ต isActiveMaster
   hybridResults.forEach(h => {
     h.isActiveMaster = h.pattern.name === selectedMaster.pattern.name;
   });
 
-  // เรียงตามคะแนนรวม (historical accuracy + stability)
+  // เรียงตามคะแนนรวมแบบใหม่
   hybridResults.sort((a, b) => {
-    const scoreA = a.historicalStats.directAccuracy + (a.stabilityScore / 10);
-    const scoreB = b.historicalStats.directAccuracy + (b.stabilityScore / 10);
+    const scoreA = calculateHybridScore(a);
+    const scoreB = calculateHybridScore(b);
     return scoreB - scoreA;
   });
 
@@ -936,7 +913,89 @@ export function analyzeHybridPatterns(
 }
 
 /**
- * เลือก Active Master ด้วยกฎ Hybrid Approach
+ * คำนวณคะแนนรวมแบบใหม่
+ * Current (40%) + Stability (30%) + Historical (20%) + Trend (10%)
+ */
+function calculateHybridScore(h: import('../types').HybridPatternInfo): number {
+  // 1. Current Performance (40%) - สำคัญที่สุด
+  const currentScore = h.currentStats.directAccuracy * 0.4;
+
+  // 2. Stability (30%) - ความมั่นคง
+  const stabilityScore = h.stabilityScore * 0.3;
+
+  // 3. Historical Performance (20%) - ประสิทธิภาพอดีต
+  const historicalScore = h.historicalStats.directAccuracy * 0.2;
+
+  // 4. Trend (10%) - แนวโน้ม
+  // ปรับน้ำหนัก Trend ให้มีผลมากขึ้น: ±10 คะแนน (ไม่ใช่ ±1)
+  const accuracyDiff = h.currentStats.directAccuracy - h.historicalStats.directAccuracy;
+  let trendScore = 0;
+  if (accuracyDiff > 5) {
+    // กำลังดีขึ้น (+10 คะแนน × 10% = 1 คะแนน)
+    trendScore = 10 * 0.1;
+  } else if (accuracyDiff < -5) {
+    // กำลังแย่ลง (-10 คะแนน × 10% = -1 คะแนน)
+    trendScore = -10 * 0.1;
+  } else {
+    // คงที่ (0 คะแนน)
+    trendScore = 0;
+  }
+
+  return currentScore + stabilityScore + historicalScore + trendScore;
+}
+
+/**
+ * เลือก Active Master ด้วยกฎ Hybrid Approach V2
+ * ใช้คะแนนรวม: Current (40%) + Stability (30%) + Historical (20%) + Trend (10%)
+ */
+function selectHybridMasterV2(
+  hybridResults: Array<import('../types').HybridPatternInfo>,
+  currentMasterPattern?: Pattern
+): import('../types').HybridPatternInfo {
+  // คำนวณคะแนนทุกสูตร
+  const scored = hybridResults.map(h => ({
+    ...h,
+    score: calculateHybridScore(h)
+  }));
+
+  // เรียงตามคะแนน
+  scored.sort((a, b) => b.score - a.score);
+
+  // ถ้ามี current master
+  if (currentMasterPattern) {
+    const currentMaster = scored.find(h => h.pattern.name === currentMasterPattern.name);
+    const bestAlternative = scored[0];
+
+    if (currentMaster && bestAlternative.pattern.name !== currentMaster.pattern.name) {
+      // เปลี่ยนสูตรเฉพาะเมื่อ:
+      // 1. สูตรปัจจุบันมีคะแนนต่ำกว่าอันดับ 1 มากกว่า 15 คะแนน หรือ
+      // 2. สูตรปัจจุบันมี Stability < 40% (ไม่มั่นคง) หรือ
+      // 3. สูตรปัจจุบันมี Current = 0% (ไม่ถูกเลย 10 งวด)
+      const scoreDiff = bestAlternative.score - currentMaster.score;
+      const shouldSwitch = 
+        scoreDiff > 15 || 
+        currentMaster.stabilityScore < 40 ||
+        currentMaster.currentStats.directAccuracy === 0;
+
+      if (shouldSwitch) {
+        return bestAlternative;
+      } else {
+        // ยังใช้สูตรเดิม
+        return currentMaster;
+      }
+    }
+
+    if (currentMaster) {
+      return currentMaster;
+    }
+  }
+
+  // ไม่มี current master → เลือกสูตรที่ดีที่สุด
+  return scored[0];
+}
+
+/**
+ * เลือก Active Master ด้วยกฎ Hybrid Approach (เดิม - เก็บไว้สำหรับ backward compatibility)
  * - เปลี่ยนสูตรเฉพาะเมื่อ:
  *   1. สูตรปัจจุบัน maxConsecutive < 4 (ล้มเหลว) หรือ
  *   2. สูตรใหม่ดีกว่าอย่างน้อย 10% และ stable
@@ -981,5 +1040,200 @@ function selectHybridMaster(
 
   // ไม่มี current master → เลือกสูตรที่ดีที่สุด
   return qualified[0];
+}
+
+/**
+ * วิเคราะห์ความน่าเชื่อถือของการทำนาย (Prediction Confidence Analysis)
+ * ตรวจสอบว่าเลขที่ทำนายมีความน่าเชื่อถือมากน้อยเพียงใด
+ * @param predictedNumber เลขที่ทำนาย
+ * @param results ข้อมูลหวยย้อนหลัง
+ * @param patternStats สถิติของสูตรที่ใช้
+ * @returns ระดับความเชื่อมั่นและคำแนะนำ
+ */
+export function analyzePredictionConfidence(
+  predictedNumber: number,
+  results: LottoResult[],
+  patternStats: { directAccuracy: number, runningAccuracy: number, maxConsecutiveHits: number }
+): {
+  confidenceLevel: 'HIGH' | 'MEDIUM' | 'LOW' | 'VERY_LOW';
+  confidenceScore: number;  // 0-100
+  frequencyScore: number;   // 0-100
+  trendAlignment: number;   // 0-100
+  patternStrength: number;  // 0-100
+  warning: string | null;
+  recommendation: string;
+} {
+  if (!results || results.length < 10) {
+    return {
+      confidenceLevel: 'VERY_LOW',
+      confidenceScore: 0,
+      frequencyScore: 0,
+      trendAlignment: 0,
+      patternStrength: 0,
+      warning: '⚠️ ข้อมูลไม่เพียงพอสำหรับการวิเคราะห์',
+      recommendation: 'รอให้มีข้อมูลอย่างน้อย 10 งวด'
+    };
+  }
+
+  const predicted = predictedNumber.toString().padStart(2, '0');
+  const predTens = Math.floor(predictedNumber / 10);
+  const predUnits = predictedNumber % 10;
+
+  // ===== 1. FREQUENCY ANALYSIS (30%) =====
+  // เลขที่ทำนายออกบ่อยแค่ไหนในอดีต
+  let predictedCount = 0;
+  const recentWindow = Math.min(30, results.length);
+  
+  for (let i = 0; i < recentWindow; i++) {
+    const r2 = parseInt(results[i].r2, 10);
+    if (r2 === predictedNumber) {
+      predictedCount++;
+    }
+  }
+  
+  // คะแนนความถี่ (ออก 1 ครั้ง = 50 คะแนน, 2 ครั้ง = 70, 3+ ครั้ง = 90)
+  const frequencyScore = predictedCount === 0 ? 30 : 
+                         predictedCount === 1 ? 50 :
+                         predictedCount === 2 ? 70 : 90;
+
+  // ===== 2. TREND ALIGNMENT (25%) =====
+  // เลขที่ทำนายสอดคล้องกับแนวโน้มล่าสุดหรือไม่
+  const recent10 = results.slice(0, Math.min(10, results.length));
+  const recentTensAvg = recent10.reduce((sum, r) => sum + Math.floor(parseInt(r.r2, 10) / 10), 0) / recent10.length;
+  const recentUnitsAvg = recent10.reduce((sum, r) => sum + (parseInt(r.r2, 10) % 10), 0) / recent10.length;
+  
+  const tensDiff = Math.abs(predTens - recentTensAvg);
+  const unitsDiff = Math.abs(predUnits - recentUnitsAvg);
+  
+  // ถ้ายิ่งใกล้ค่าเฉลี่ย récent ยิ่งได้คะแนนสูง
+  const trendAlignment = Math.max(0, 100 - ((tensDiff + unitsDiff) * 15));
+
+  // ===== 3. PATTERN STRENGTH (25%) =====
+  // สูตรที่ใช้มีประสิทธิภาพแค่ไหน
+  const patternStrength = Math.min(100, 
+    (patternStats.directAccuracy * 0.6) + 
+    (patternStats.runningAccuracy * 0.25) + 
+    (Math.min(patternStats.maxConsecutiveHits, 10) * 10 * 0.15)
+  );
+
+  // ===== 4. RECENCY FACTOR (20%) =====
+  // เลขที่ทำนายออกในงวดล่าสุดหรือไม่ (ถ้าออกแล้วอาจไม่ออกอีก)
+  const lastR2 = parseInt(results[0].r2, 10);
+  const wasJustDrawn = lastR2 === predictedNumber;
+  
+  // ถ้าออกในงวดล่าสุด ลดคะแนนลง 30%
+  const recencyScore = wasJustDrawn ? 40 : 70;
+
+  // ===== COMBINE ALL SCORES =====
+  const confidenceScore = Math.round(
+    (frequencyScore * 0.30) +
+    (trendAlignment * 0.25) +
+    (patternStrength * 0.25) +
+    (recencyScore * 0.20)
+  );
+
+  // ===== DETERMINE CONFIDENCE LEVEL =====
+  let confidenceLevel: 'HIGH' | 'MEDIUM' | 'LOW' | 'VERY_LOW';
+  let warning: string | null = null;
+  let recommendation: string;
+
+  if (confidenceScore >= 70) {
+    confidenceLevel = 'HIGH';
+    recommendation = `✅ เลข ${predicted} มีความน่าเชื่อถือสูง (${confidenceScore}%)`;
+  } else if (confidenceScore >= 50) {
+    confidenceLevel = 'MEDIUM';
+    recommendation = `🔶 เลข ${predicted} มีความน่าเชื่อถือปานกลาง (${confidenceScore}%) ควรใช้ร่วมกับเลขอื่น`;
+  } else if (confidenceScore >= 30) {
+    confidenceLevel = 'LOW';
+    warning = `⚠️ ความน่าเชื่อถือต่ำ (${confidenceScore}%)`;
+    recommendation = `เลข ${predicted} อาจไม่เหมาะสม ควรพิจารณาเลขอื่นหรือรื่องวดถัดไป`;
+  } else {
+    confidenceLevel = 'VERY_LOW';
+    warning = `❌ ความน่าเชื่อถือต่ำมาก (${confidenceScore}%)`;
+    recommendation = `ไม่แนะนำให้ใช้เลข ${predicted} ควรเปลี่ยนสูตรหรือรื่องวดถัดไป`;
+  }
+
+  // Extra warning if just drawn
+  if (wasJustDrawn) {
+    warning = warning ? warning + ` | เลข ${predicted} เพิ่งออกในงวดล่าสุด` : 
+              `⚠️ เลข ${predicted} เพิ่งออกในงวดล่าสุด อาจไม่ออกอีก`;
+  }
+
+  return {
+    confidenceLevel,
+    confidenceScore,
+    frequencyScore,
+    trendAlignment,
+    patternStrength,
+    warning,
+    recommendation
+  };
+}
+
+/**
+ * วิเคราะห์แนวโน้มความแม่นยำ (Accuracy Trend Analysis)
+ * ดูว่าสูตรมีความแม่นยำเพิ่มขึ้นหรือลดลงในช่วงหลัง
+ * @param results ข้อมูลหวยย้อนหลัง
+ * @param pattern สูตรที่จะวิเคราะห์
+ * @param windowSize จำนวนงวดที่จะตรวจสอบ (default: 20)
+ * @returns ผลการวิเคราะห์แนวโน้ม
+ */
+export function analyzeAccuracyTrend(
+  results: LottoResult[],
+  pattern: Pattern,
+  windowSize: number = 20
+): {
+  recentAccuracy: number;      // ความแม่นยำ 10 งวดล่าสุด
+  olderAccuracy: number;       // ความแม่นยำ 10 งวดก่อนหน้า
+  trend: 'IMPROVING' | 'STABLE' | 'DECLINING';
+  trendPercentage: number;     // % การเปลี่ยนแปลง
+  recommendation: string;
+} {
+  if (!results || results.length < windowSize * 2) {
+    return {
+      recentAccuracy: 0,
+      olderAccuracy: 0,
+      trend: 'STABLE',
+      trendPercentage: 0,
+      recommendation: 'ข้อมูลไม่เพียงพอสำหรับการวิเคราะห์แนวโน้ม'
+    };
+  }
+
+  // ✅ แก้ไข Bug #3: ใช้ข้อมูลที่ถูกต้อง
+  // ทดสอบ windowSize งวดล่าสุด (เช่น 10 งวด)
+  const recentResults = backtestPattern(results, pattern, Math.min(windowSize, results.length));
+
+  // ทดสอบ windowSize งวดก่อนหน้า (ตัดงวดล่าสุดออก)
+  const olderResultsSubset = results.slice(windowSize);
+  const olderResults = backtestPattern(olderResultsSubset, pattern, Math.min(windowSize, olderResultsSubset.length));
+
+  const recentAccuracy = recentResults.directAccuracy;
+  const olderAccuracy = olderResults.directAccuracy;
+  
+  const trendPercentage = olderAccuracy > 0 
+    ? ((recentAccuracy - olderAccuracy) / olderAccuracy) * 100 
+    : 0;
+
+  let trend: 'IMPROVING' | 'STABLE' | 'DECLINING';
+  let recommendation: string;
+
+  if (trendPercentage > 10) {
+    trend = 'IMPROVING';
+    recommendation = `📈 สูตร "${pattern.name}" มีแนวโน้มดีขึ้น (+${trendPercentage.toFixed(1)}%)`;
+  } else if (trendPercentage < -10) {
+    trend = 'DECLINING';
+    recommendation = `📉 สูตร "${pattern.name}" มีแนวโน้มลดลง (${trendPercentage.toFixed(1)}%) ควรเปลี่ยนสูตร`;
+  } else {
+    trend = 'STABLE';
+    recommendation = `➡️ สูตร "${pattern.name}" คงที่ (${trendPercentage >= 0 ? '+' : ''}${trendPercentage.toFixed(1)}%)`;
+  }
+
+  return {
+    recentAccuracy,
+    olderAccuracy,
+    trend,
+    trendPercentage,
+    recommendation
+  };
 }
 

@@ -59,4 +59,22 @@ export interface RepeatAnalysis {
   recommendation: string;              // คำแนะนำ
 }
 
+export interface PredictionConfidence {
+  confidenceLevel: 'HIGH' | 'MEDIUM' | 'LOW' | 'VERY_LOW';
+  confidenceScore: number;  // 0-100
+  frequencyScore: number;   // 0-100
+  trendAlignment: number;   // 0-100
+  patternStrength: number;  // 0-100
+  warning: string | null;
+  recommendation: string;
+}
+
+export interface AccuracyTrend {
+  recentAccuracy: number;      // ความแม่นยำ 10 งวดล่าสุด
+  olderAccuracy: number;       // ความแม่นยำ 10 งวดก่อนหน้า
+  trend: 'IMPROVING' | 'STABLE' | 'DECLINING';
+  trendPercentage: number;     // % การเปลี่ยนแปลง
+  recommendation: string;
+}
+
 

@@ -699,35 +699,193 @@ import {
               })}
             </div>
             
-            {/* HYBRID EXPLANATION */}
-            <div className="mt-6 p-4 bg-slate-900/40 rounded-2xl border border-slate-800">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-[10px]">
-                <div className="flex items-start gap-2">
-                  <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-500/20 border border-emerald-500/30 animate-pulse flex-shrink-0">
-                    <span className="text-lg">👑</span>
+            {/* HYBRID EXPLANATION - คำอธิบายความหมายต่างๆ */}
+            <div className="mt-6 p-5 bg-slate-900/40 rounded-2xl border border-slate-800">
+              <h4 className="text-sm font-black text-white mb-4 flex items-center gap-2">
+                <span className="text-lg">📖</span> คำอธิบายความหมายของแต่ละตัวชี้วัด
+              </h4>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-[10px]">
+                {/* คอลัมน์ซ้าย */}
+                <div className="space-y-4">
+                  {/* Historical Accuracy */}
+                  <div className="flex items-start gap-3">
+                    <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-cyan-500/20 border border-cyan-500/30 flex-shrink-0">
+                      <span className="text-xs font-black text-cyan-400">H</span>
+                    </div>
+                    <div>
+                      <p className="font-black text-cyan-400 uppercase">Historical (30) - ความแม่นยำย้อนหลัง 30 งวด</p>
+                      <p className="text-slate-500 mt-1">
+                        เปอร์เซ็นต์การทายถูกตรงตัวใน 30 งวดย้อนหลัง ยิ่งสูงยิ่งดี (แนะนำ &gt; 15%)
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-black text-slate-400 uppercase">Active Master</p>
-                    <p className="text-slate-600">เปลี่ยนเฉพาะเมื่อล้มเหลว หรือมีสูตรที่ดีกว่า 10%+</p>
+
+                  {/* Current Accuracy */}
+                  <div className="flex items-start gap-3">
+                    <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex-shrink-0">
+                      <span className="text-xs font-black text-emerald-400">C</span>
+                    </div>
+                    <div>
+                      <p className="font-black text-emerald-400 uppercase">Current (10) - ความแม่นยำ 10 งวดล่าสุด</p>
+                      <p className="text-slate-500 mt-1">
+                        เปอร์เซ็นต์การทายถูกตรงตัวใน 10 งวดล่าสุด สะท้อนประสิทธิภาพปัจจุบัน (สำคัญที่สุด!)
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Stability */}
+                  <div className="flex items-start gap-3">
+                    <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-amber-500/20 border border-amber-500/30 flex-shrink-0">
+                      <span className="text-xs font-black text-amber-400">S</span>
+                    </div>
+                    <div>
+                      <p className="font-black text-amber-400 uppercase">Stability - คะแนนความมั่นคง (0-100%)</p>
+                      <p className="text-slate-500 mt-1">
+                        วัดความสม่ำเสมอของสูตร สูตรที่มี Performance คงที่ได้คะแนนสูง
+                        <br />
+                        <span className="text-emerald-400">≥ 70% = มั่นคงมาก</span> | <span className="text-amber-400">50-69% = ปานกลาง</span> | <span className="text-red-400">&lt; 50% = ไม่มั่นคง</span>
+                        <br />
+                        <span className="text-slate-600">⚠️ ถ้า Accuracy &lt; 5% จะได้ Stability = 0% ทันที</span>
+                      </p>
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-start gap-2">
-                  <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex-shrink-0">
-                    <span className="text-sm text-emerald-400 font-black">✓</span>
+
+                {/* คอลัมน์ขวา */}
+                <div className="space-y-4">
+                  {/* Max Consecutive */}
+                  <div className="flex items-start gap-3">
+                    <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-purple-500/20 border border-purple-500/30 flex-shrink-0">
+                      <span className="text-xs font-black text-purple-400">M</span>
+                    </div>
+                    <div>
+                      <p className="font-black text-purple-400 uppercase">Max Consecutive - ทายถูกติดต่อกันสูงสุด</p>
+                      <p className="text-slate-500 mt-1">
+                        จำนวนงวดสูงสุดที่สูตรทายถูกติดต่อกัน (ตรงตัว หรือ Running) ยิ่งสูงยิ่งแสดงถึงความน่าเชื่อถือ
+                        <br />
+                        <span className="text-emerald-400">≥ 6 งวด = ดีมาก</span> | <span className="text-amber-400">4-5 งวด = พอใช้</span> | <span className="text-red-400">&lt; 4 งวด = ควรระวัง</span>
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-black text-slate-400 uppercase">Qualified</p>
-                    <p className="text-slate-600">Max Consecutive ≥ 4 งวด มีความน่าเชื่อถือ</p>
+
+                  {/* Current Consecutive */}
+                  <div className="flex items-start gap-3">
+                    <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-pink-500/20 border border-pink-500/30 flex-shrink-0">
+                      <span className="text-xs font-black text-pink-400">CC</span>
+                    </div>
+                    <div>
+                      <p className="font-black text-pink-400 uppercase">Current - ทายถูกติดต่อกันปัจจุบัน</p>
+                      <p className="text-slate-500 mt-1">
+                        จำนวนงวดที่ทายถูกติดต่อกันในปัจจุบัน (กำลังเกิดขึ้น) ถ้ายิ่งสูงแสดงว่าสูตรกำลัง "Hot"
+                        <br />
+                        <span className="text-emerald-400">≥ 6 งวด = กำลัง Hot 🔥</span> | <span className="text-amber-400">3-5 งวด = ปกติ</span> | <span className="text-red-400">0-2 งวด = กำลัง Cold ❄️</span>
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Trend Arrows */}
+                  <div className="flex items-start gap-3">
+                    <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-blue-500/20 border border-blue-500/30 flex-shrink-0">
+                      <span className="text-xs">📊</span>
+                    </div>
+                    <div>
+                      <p className="font-black text-blue-400 uppercase">Trend - แนวโน้ม (ลูกศร)</p>
+                      <p className="text-slate-500 mt-1">
+                        <span className="text-emerald-400">📈 กำลังดีขึ้น</span> = Current &gt; Historical + 5% (สูตรกำลังพัฒนา)
+                        <br />
+                        <span className="text-amber-400">➡️ คงที่</span> = ต่างกันไม่เกิน ±5% (เสถียร)
+                        <br />
+                        <span className="text-red-400">📉 กำลังแย่ลง</span> = Current &lt; Historical - 5% (ควรเปลี่ยนสูตร)
+                      </p>
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-start gap-2">
-                  <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-500/10 border border-red-500/20 flex-shrink-0">
-                    <span className="text-sm text-red-400 font-black">✗</span>
+              </div>
+
+              {/* สัญลักษณ์เพิ่มเติม */}
+              <div className="mt-5 pt-4 border-t border-slate-800">
+                <h5 className="text-xs font-black text-slate-400 mb-3">สัญลักษณ์และสถานะ:</h5>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[10px]">
+                  <div className="flex items-start gap-2">
+                    <span className="text-base">👑</span>
+                    <div>
+                      <p className="font-black text-emerald-400">Active Master (มงกุฎ)</p>
+                      <p className="text-slate-600">สูตรที่ระบบเลือกใช้งานอยู่ เปลี่ยนเฉพาะเมื่อล้มเหลว หรือมีสูตรที่ดีกว่าชัดเจน</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-black text-slate-400 uppercase">Unstable</p>
-                    <p className="text-slate-600">Max Consecutive {'<'} 4 งวด ควรหลีกเลี่ยง</p>
+                  <div className="flex items-start gap-2">
+                    <span className="text-base text-emerald-400 font-black">✓</span>
+                    <div>
+                      <p className="font-black text-emerald-400">Qualified (เครื่องหมายถูก)</p>
+                      <p className="text-slate-600">สูตรที่ผ่านเกณฑ์ Max Consecutive ≥ 4 งวด มีความน่าเชื่อถือ</p>
+                    </div>
                   </div>
+                  <div className="flex items-start gap-2">
+                    <span className="text-base text-red-400 font-black">✗</span>
+                    <div>
+                      <p className="font-black text-red-400">Unqualified (เครื่องหมายผิด)</p>
+                      <p className="text-slate-600">สูตรที่ไม่ผ่านเกณฑ์ Max Consecutive &lt; 4 งวด ควรหลีกเลี่ยง</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="text-base">🔥</span>
+                    <div>
+                      <p className="font-black text-amber-400">Hot / Cold</p>
+                      <p className="text-slate-600">Hot = กำลังทายถูกติดต่อกันหลายงวด | Cold = กำลังทายผิดหลายงวดติด</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* การให้คะแนน */}
+              <div className="mt-4 pt-4 border-t border-slate-800">
+                <h5 className="text-xs font-black text-slate-400 mb-2">🏆 การคำนวณคะแนนจัดอันดับ:</h5>
+                <div className="bg-slate-950/60 p-3 rounded-xl border border-slate-800 text-[10px] space-y-1">
+                  <p className="text-slate-500">คะแนนรวม = (Current × 40%) + (Stability × 30%) + (Historical × 20%) + (Trend × 10%)</p>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
+                    <div className="bg-emerald-500/10 p-2 rounded-lg border border-emerald-500/20">
+                      <p className="font-black text-emerald-400">Current 40%</p>
+                      <p className="text-slate-600">สำคัญที่สุด</p>
+                    </div>
+                    <div className="bg-amber-500/10 p-2 rounded-lg border border-amber-500/20">
+                      <p className="font-black text-amber-400">Stability 30%</p>
+                      <p className="text-slate-600">ความมั่นคง</p>
+                    </div>
+                    <div className="bg-cyan-500/10 p-2 rounded-lg border border-cyan-500/20">
+                      <p className="font-black text-cyan-400">Historical 20%</p>
+                      <p className="text-slate-600">อดีต</p>
+                    </div>
+                    <div className="bg-blue-500/10 p-2 rounded-lg border border-blue-500/20">
+                      <p className="font-black text-blue-400">Trend 10%</p>
+                      <p className="text-slate-600">แนวโน้ม</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* คำแนะนำ */}
+              <div className="mt-4 pt-4 border-t border-slate-800">
+                <h5 className="text-xs font-black text-slate-400 mb-2">💡 คำแนะนำการใช้งาน:</h5>
+                <div className="bg-emerald-500/5 p-3 rounded-xl border border-emerald-500/20 text-[10px] space-y-2">
+                  <p className="text-slate-400">
+                    <span className="text-emerald-400 font-black">✅ ควรใช้สูตรที่:</span>
+                  </p>
+                  <ul className="text-slate-500 space-y-1 ml-4 list-disc">
+                    <li>มี <span className="text-emerald-400">Current (10) &gt; 10%</span> (ทายถูกอย่างน้อย 1 ใน 10 งวด)</li>
+                    <li>มี <span className="text-emerald-400">Stability &gt; 60%</span> (มีความมั่นคง)</li>
+                    <li>มี <span className="text-emerald-400">Max Consecutive ≥ 4 งวด</span> (เคยทายถูกติดต่อกัน)</li>
+                    <li>มี <span className="text-emerald-400">Trend 📈 หรือ ➡️</span> (กำลังดีขึ้นหรือคงที่)</li>
+                  </ul>
+                  <p className="text-slate-400 mt-2">
+                    <span className="text-red-400 font-black">❌ ควรหลีกเลี่ยงสูตรที่:</span>
+                  </p>
+                  <ul className="text-slate-500 space-y-1 ml-4 list-disc">
+                    <li>มี <span className="text-red-400">Current (10) = 0%</span> (ไม่ถูกเลย 10 งวดล่าสุด)</li>
+                    <li>มี <span className="text-red-400">Stability &lt; 40%</span> (ไม่มั่นคง)</li>
+                    <li>มี <span className="text-red-400">Trend 📉</span> (กำลังแย่ลง)</li>
+                    <li>มีเครื่องหมาย <span className="text-red-400">✗</span> (ไม่ผ่านเกณฑ์)</li>
+                  </ul>
                 </div>
               </div>
             </div>
@@ -1052,11 +1210,11 @@ import {
                   </div>
                   <div className="flex items-start gap-2">
                     <div className="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-red-500/30 border-2 border-red-500/50 flex-shrink-0">
-                      <span className="text-sm font-black text-red-400">49</span>
+                      <span className="text-sm font-black text-red-400">XX</span>
                     </div>
                     <div>
                       <p className="font-black text-slate-400 uppercase">ออกแล้ว!</p>
-                      <p className="text-slate-600">เลขตรงผลหวยล่าสุด</p>
+                      <p className="text-slate-600">เลขที่ทำนายตรงกับผลหวย</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">
