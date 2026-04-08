@@ -216,14 +216,14 @@ export const fetchLottoData = async (): Promise<LottoResult[]> => {
 
 /**
  * MASTER SELECTION - หลักการคำนวณแบบผสมผสาน (Ensemble Method)
- * 
+ *
  * ใช้หลักการ 5 ประการร่วมกัน:
  * 1. Hot Number Analysis - ตัวเลขที่ออกบ่อยในช่วง 20-30 งวด
  * 2. Cold Number Due - ตัวเลขที่ไม่ค่อยออก มีโอกาสออกสูง
  * 3. Position Analysis - วิเคราะห์ตำแหน่งหลักสิบและหลักหน่วยแยกกัน
  * 4. Pattern Recognition - หารูปแบบที่ซ้ำซาก (cycles, sequences)
  * 5. Trend Momentum - แนวโน้มการเปลี่ยนแปลงล่าสุด
- * 
+ *
  * การให้คะแนน:
  * - แต่ละหลักการให้คะแนน 0-100 กับเลขแต่ละตัว
  * - รวมคะแนนทั้งหมด (weighted sum)
@@ -237,7 +237,7 @@ export const PATTERNS: Pattern[] = [
       /**
        * N-GRAM PATTERN MATCHING
        * หารูปแบบจากลำดับ 2-3 งวดที่คล้ายกัน
-       * 
+       *
        * หลักการ:
        * - จำดูลำดับของเลข 2-3 งวดก่อนหน้า
        * - หาลำดับที่คล้ายที่สุดในอดีต
@@ -248,52 +248,52 @@ export const PATTERNS: Pattern[] = [
         const units = ((l % 10) + 5) % 10;
         return (tens * 10) + units;
       }
-      
+
       const ngramLength = 3; // ดู 3 งวดล่าสุด
       const currentSequence: number[] = [l, p];
       if (results.length >= 3) {
         currentSequence.push(parseInt(results[2].r2, 10));
       }
-      
+
       // ค้นหาลำดับที่คล้ายกันในอดีต
       const matches: Array<{ sequence: number[], nextNumber: number, similarity: number }> = [];
-      
+
       for (let i = 2; i < results.length - 1 && i < 50; i++) {
         const histSequence: number[] = [
           parseInt(results[i].r2, 10),
           parseInt(results[i - 1]?.r2 || '0', 10),
           parseInt(results[i - 2]?.r2 || '0', 10)
         ];
-        
+
         // คำนวณความคล้าย (inverse distance)
         let distance = 0;
         for (let j = 0; j < Math.min(currentSequence.length, histSequence.length); j++) {
           distance += Math.abs(currentSequence[j] - histSequence[j]);
         }
-        
+
         const similarity = 1 / (1 + distance);
         const nextNumber = parseInt(results[i - 1]?.r2 || '0', 10);
-        
+
         matches.push({ sequence: histSequence, nextNumber, similarity });
       }
-      
+
       // เรียงตามความคล้าย
       matches.sort((a, b) => b.similarity - a.similarity);
-      
+
       // เลือก top 5 matches
       const topMatches = matches.slice(0, 5);
-      
+
       // นับความถี่ของเลขที่ออกหลังจากลำดับที่คล้าย
       const tensCount: number[] = Array(10).fill(0);
       const unitsCount: number[] = Array(10).fill(0);
-      
+
       topMatches.forEach(match => {
         const tens = Math.floor(match.nextNumber / 10);
         const units = match.nextNumber % 10;
         tensCount[tens] += match.similarity;
         unitsCount[units] += match.similarity;
       });
-      
+
       const predictedTens = tensCount.indexOf(Math.max(...tensCount));
       const predictedUnits = unitsCount.indexOf(Math.max(...unitsCount));
 
@@ -306,7 +306,7 @@ export const PATTERNS: Pattern[] = [
       /**
        * สูตรสถิติความถี่ (Hot Numbers) - จาก social media
        * ทดสอบแล้ว: Direct 19.35%, Max Consecutive 3 งวด
-       * 
+       *
        * หลักการ:
        * 1. ดู 20 งวดล่าสุด
        * 2. นับความถี่หลักสิบและหลักหน่วยแยกกัน
@@ -323,34 +323,34 @@ export const PATTERNS: Pattern[] = [
 
       const window = Math.min(20, results.length);
       const recentData = results.slice(0, window);
-      
+
       // ===== 1. นับความถี่หลักสิบและหลักหน่วย =====
       const tensCount: number[] = Array(10).fill(0);
       const unitsCount: number[] = Array(10).fill(0);
-      
+
       recentData.forEach(r => {
         const r2 = parseInt(r.r2, 10);
         tensCount[Math.floor(r2 / 10)]++;
         unitsCount[r2 % 10]++;
       });
-      
+
       // ===== 2. เลือกเลขที่ออกบ่อยที่สุด 3 ตัว =====
       const topTens = tensCount
         .map((count, digit) => ({ digit, count }))
         .sort((a, b) => b.count - a.count)
         .slice(0, 3)
         .map(x => x.digit);
-      
+
       const topUnits = unitsCount
         .map((count, digit) => ({ digit, count }))
         .sort((a, b) => b.count - a.count)
         .slice(0, 3)
         .map(x => x.digit);
-      
+
       // ===== 3. จับคู่และเลือกคู่ที่มีความถี่รวมสูงสุด =====
       // คำนวณคะแนนสำหรับแต่ละคู่
       const pairs: Array<{ number: number, score: number }> = [];
-      
+
       for (const tens of topTens) {
         for (const units of topUnits) {
           const number = (tens * 10) + units;
@@ -359,10 +359,10 @@ export const PATTERNS: Pattern[] = [
           pairs.push({ number, score });
         }
       }
-      
+
       // เลือกคู่ที่มีคะแนนสูงสุด
       pairs.sort((a, b) => b.score - a.score);
-      
+
       return pairs[0].number;
     }
   },
@@ -419,11 +419,11 @@ export const PATTERNS: Pattern[] = [
 
       // Build transition matrix from historical data
       const transitionMatrix: number[][] = Array(100).fill(null).map(() => Array(10).fill(0));
-      
+
       for (let i = 0; i < results.length - 1; i++) {
         const current = parseInt(results[i].r2, 10);
         const next = parseInt(results[i - 1]?.r2 || '0', 10);
-        
+
         // Track tens digit transition
         const currentTens = Math.floor(current / 10);
         const nextTens = Math.floor(next / 10);
@@ -441,7 +441,7 @@ export const PATTERNS: Pattern[] = [
       for (let i = 0; i < results.length - 1; i++) {
         const current = parseInt(results[i].r2, 10);
         const next = parseInt(results[i - 1]?.r2 || '0', 10);
-        
+
         const currentUnits = current % 10;
         const nextUnits = next % 10;
         transitionMatrixUnits[currentUnits][nextUnits]++;
@@ -492,14 +492,14 @@ export const PATTERNS: Pattern[] = [
 
       // Combine factors with different weights
       const tens = Math.round(
-        (avgTens * 0.35) + 
-        ((Math.floor(l / 10) + momentumTens) * 0.35) + 
+        (avgTens * 0.35) +
+        ((Math.floor(l / 10) + momentumTens) * 0.35) +
         (cycleTens * 0.30)
       ) % 10;
 
       const units = Math.round(
-        (avgUnits * 0.35) + 
-        ((l % 10) + momentumUnits) * 0.35 + 
+        (avgUnits * 0.35) +
+        ((l % 10) + momentumUnits) * 0.35 +
         (cycleUnits * 0.30)
       ) % 10;
 
@@ -512,13 +512,13 @@ export const PATTERNS: Pattern[] = [
       /**
        * 4D DEEP LEARNING v2 - ผสม Markov Chain + 4D Analysis
        * ใช้ข้อมูลย้อนหลัง 40-50 งวด
-       * 
+       *
        * หลักการ:
        * 1. Markov Transition (40%) - ความน่าจะเป็นเปลี่ยนสถานะ
        * 2. 4D Position Pattern (30%) - วิเคราะห์ตำแหน่งใน 4 หลัก
        * 3. Recent Trend (30%) - แนวโน้ม 10 งวดล่าสุด
        */
-      
+
       if (!results || results.length < 20) {
         const tens = (Math.floor(l / 10) + 3) % 10;
         const units = ((l % 10) + 7) % 10;
@@ -528,95 +528,202 @@ export const PATTERNS: Pattern[] = [
       const analysisWindow = Math.min(50, results.length);
       const recentData = results.slice(0, analysisWindow);
       const lastR4 = results[0].r4.padStart(4, '0');
-      
+
       // ===== 1. MARKOV TRANSITION MATRIX (40%) =====
       // สร้าง matrix ความน่าจะเป็นของการเปลี่ยนสถานะ
       const tensTransition: number[][] = Array(10).fill(null).map(() => Array(10).fill(0));
       const unitsTransition: number[][] = Array(10).fill(null).map(() => Array(10).fill(0));
-      
+
       // นับความถี่ของการเปลี่ยนสถานะ
       for (let i = 1; i < analysisWindow; i++) {
         const currentR2 = parseInt(results[i].r2, 10);
         const nextR2 = parseInt(results[i - 1].r2, 10);
-        
+
         const currentTens = Math.floor(currentR2 / 10);
         const currentUnits = currentR2 % 10;
         const nextTens = Math.floor(nextR2 / 10);
         const nextUnits = nextR2 % 10;
-        
+
         tensTransition[currentTens][nextTens]++;
         unitsTransition[currentUnits][nextUnits]++;
       }
-      
+
       // คำนวณความน่าจะเป็น
       const lastTens = Math.floor(l / 10);
       const lastUnits = l % 10;
-      
+
       const tensProbs = tensTransition[lastTens];
       const unitsProbs = unitsTransition[lastUnits];
-      
+
       // หาค่าสูงสุด
       const maxTensProb = Math.max(...tensProbs);
       const maxUnitsProb = Math.max(...unitsProbs);
-      
+
       const predictedTensMarkov = maxTensProb > 0 ? tensProbs.indexOf(maxTensProb) : lastTens;
       const predictedUnitsMarkov = maxUnitsProb > 0 ? unitsProbs.indexOf(maxUnitsProb) : lastUnits;
-      
+
       // ===== 2. 4D POSITION PATTERN (30%) =====
       // วิเคราะห์ว่าหลักสิบ-หน่วย ใน 4 หลัก มี pattern อย่างไร
       const positionPattern: number[][] = [
         Array(10).fill(0),  // ตำแหน่งที่ 3 (หลักสิบ)
         Array(10).fill(0)   // ตำแหน่งที่ 4 (หลักหน่วย)
       ];
-      
+
       recentData.forEach(r => {
         const r4 = r.r4.padStart(4, '0');
         positionPattern[0][parseInt(r4[2], 10)]++;  // หลักสิบจาก 4 หลัก
         positionPattern[1][parseInt(r4[3], 10)]++;  // หลักหน่วยจาก 4 หลัก
       });
-      
+
       // หาคะแนนความถี่
       const lastTensFrom4D = parseInt(lastR4[2], 10);
       const lastUnitsFrom4D = parseInt(lastR4[3], 10);
-      
+
       const maxPosTens = Math.max(...positionPattern[0]);
       const maxPosUnits = Math.max(...positionPattern[1]);
-      
+
       const tensFreqScore = positionPattern[0][lastTensFrom4D] / maxPosTens;
       const unitsFreqScore = positionPattern[1][lastUnitsFrom4D] / maxPosUnits;
-      
+
       // ถ้ายิ่งออกบ่อย ยิ่งมีโอกาสออกอีก
       const predictedTens4D = tensFreqScore > 0.5 ? lastTensFrom4D : positionPattern[0].indexOf(maxPosTens);
       const predictedUnits4D = unitsFreqScore > 0.5 ? lastUnitsFrom4D : positionPattern[1].indexOf(maxPosUnits);
-      
+
       // ===== 3. RECENT TREND (30%) =====
       // ดู 10 งวดล่าสุด เพื่อจับแนวโน้มระยะสั้น
       const recent10 = results.slice(0, Math.min(10, results.length));
       const recentTensAvg = recent10.reduce((sum, r) => sum + Math.floor(parseInt(r.r2, 10) / 10), 0) / recent10.length;
       const recentUnitsAvg = recent10.reduce((sum, r) => sum + (parseInt(r.r2, 10) % 10), 0) / recent10.length;
-      
+
       const predictedTensRecent = Math.round(recentTensAvg) % 10;
       const predictedUnitsRecent = Math.round(recentUnitsAvg) % 10;
-      
+
       // ===== COMBINE ALL PREDICTIONS =====
       // ผสมผลลัพธ์จาก 3 หลักการ
       // ให้น้ำหนัก: Markov 40%, 4D 30%, Recent 30%
-      
+
       // วิธีผสม: นับว่าเลขไหนถูกเลือกบ่อยที่สุด
       const tensVotes: number[] = Array(10).fill(0);
       const unitsVotes: number[] = Array(10).fill(0);
-      
+
       // Markov (น้ำหนัก 40% = 4 โหวต)
       tensVotes[predictedTensMarkov] += 4;
       unitsVotes[predictedUnitsMarkov] += 4;
-      
+
       // 4D Pattern (น้ำหนัก 30% = 3 โหวต)
       tensVotes[predictedTens4D] += 3;
       unitsVotes[predictedUnits4D] += 3;
-      
+
       // Recent Trend (น้ำหนัก 30% = 3 โหวต)
       tensVotes[predictedTensRecent] += 3;
       unitsVotes[predictedUnitsRecent] += 3;
+
+      // เลือกเลขที่ได้โหวตสูงสุด
+      const finalTens = tensVotes.indexOf(Math.max(...tensVotes));
+      const finalUnits = unitsVotes.indexOf(Math.max(...unitsVotes));
+
+      return (finalTens * 10) + finalUnits;
+    }
+  },
+  {
+    name: "Advanced Cluster Fusion (High-Digit + Cluster)",
+    calc: (p, l, l4, results?) => {
+      /**
+       * ADVANCED CLUSTER FUSION
+       * รวมสูตร Advanced High-Digit Sum + Cluster Frequency Matching
+       *
+       * หลักการผสม:
+       * 1. Advanced High-Digit คำนวณ base digit จากหลักสูง
+       * 2. Cluster Frequency หา hot cluster จากสถิติ
+       * 3. ผสมผลลัพธ์จาก 2 วิธี (Weighted Voting)
+       * 4. เลือกเลขที่ได้คะแนนสูงสุด
+       *
+       * น้ำหนักคะแนน:
+       * - High-Digit Method: 40% (เน้นโครงสร้างเลข)
+       * - Cluster Method: 40% (เน้นสถิติความถี่)
+       * - Recent Trend: 20% (แนวโน้มล่าสุด)
+       */
+      
+      const s = l4 || l.toString().padStart(4, '0');
+      
+      // ===== ส่วนที่ 1: ADVANCED HIGH-DIGIT SUM (40%) =====
+      const hundredThousand = parseInt(s[0], 10) || 0;
+      const tenThousand = parseInt(s[1], 10) || 0;
+      const baseDigit = (hundredThousand + tenThousand) % 10;
+      const d1 = (baseDigit + 3) % 10;
+      const d2 = (baseDigit + 7) % 10;
+      
+      const highDigitTens = (d1 + parseInt(s[2], 10)) % 10;
+      const highDigitUnits = (d2 + parseInt(s[3], 10)) % 10;
+      const highDigitNumber = (highDigitTens * 10) + highDigitUnits;
+      
+      // ===== ส่วนที่ 2: CLUSTER FREQUENCY (40%) =====
+      let clusterNumber = highDigitNumber; // Default fallback
+      
+      if (results && results.length >= 15) {
+        const window = Math.min(30, results.length);
+        const recentData = results.slice(0, window);
+        
+        const digitFrequency: number[] = Array(10).fill(0);
+        recentData.forEach(r => {
+          const r2 = parseInt(r.r2, 10);
+          const tens = Math.floor(r2 / 10);
+          const units = r2 % 10;
+          digitFrequency[tens]++;
+          digitFrequency[units]++;
+        });
+        
+        const hotDigits = digitFrequency
+          .map((freq, digit) => ({ digit, freq }))
+          .sort((a, b) => b.freq - a.freq)
+          .slice(0, 3)
+          .map(x => x.digit);
+        
+        const lastDigit = l % 10;
+        const pairs: Array<{ number: number, score: number }> = [];
+        
+        hotDigits.forEach(digit => {
+          const number = (digit * 10) + lastDigit;
+          const score = (digitFrequency[digit] * 2) + digitFrequency[lastDigit];
+          pairs.push({ number, score });
+        });
+        
+        pairs.sort((a, b) => b.score - a.score);
+        clusterNumber = pairs[0].number;
+      }
+      
+      // ===== ส่วนที่ 3: RECENT TREND (20%) =====
+      let recentTrendNumber = highDigitNumber;
+      
+      if (results && results.length >= 5) {
+        const recent5 = results.slice(0, Math.min(10, results.length));
+        const avgTens = recent5.reduce((sum, r) => sum + Math.floor(parseInt(r.r2, 10) / 10), 0) / recent5.length;
+        const avgUnits = recent5.reduce((sum, r) => sum + (parseInt(r.r2, 10) % 10), 0) / recent5.length;
+        
+        const trendTens = Math.round(avgTens) % 10;
+        const trendUnits = Math.round(avgUnits) % 10;
+        recentTrendNumber = (trendTens * 10) + trendUnits;
+      }
+      
+      // ===== ผสมผลลัพธ์จาก 3 วิธี (Weighted Voting) =====
+      const tensVotes: number[] = Array(10).fill(0);
+      const unitsVotes: number[] = Array(10).fill(0);
+      
+      // High-Digit (น้ำหนัก 40% = 4 โหวต)
+      tensVotes[highDigitTens] += 4;
+      unitsVotes[highDigitUnits] += 4;
+      
+      // Cluster (น้ำหนัก 40% = 4 โหวต)
+      const clusterTens = Math.floor(clusterNumber / 10);
+      const clusterUnits = clusterNumber % 10;
+      tensVotes[clusterTens] += 4;
+      unitsVotes[clusterUnits] += 4;
+      
+      // Recent Trend (น้ำหนัก 20% = 2 โหวต)
+      const trendTens = Math.floor(recentTrendNumber / 10);
+      const trendUnits = recentTrendNumber % 10;
+      tensVotes[trendTens] += 2;
+      unitsVotes[trendUnits] += 2;
       
       // เลือกเลขที่ได้โหวตสูงสุด
       const finalTens = tensVotes.indexOf(Math.max(...tensVotes));
@@ -628,6 +735,22 @@ export const PATTERNS: Pattern[] = [
 ];
 
 export const MASTER_PATTERN = PATTERNS[0];
+
+/**
+ * สูตรที่ 2: Multiplicative Scalar (x5 + 5) - จาก new.txt
+ * สำหรับแสดงเลขเด่น (Running Digits) แยกต่างหาก
+ */
+export function calculateRunningDigits(l4?: string, l?: number): number[] {
+  const top3Str = l4 || (l ? l.toString().padStart(4, '0').slice(1) : '000');
+  const topValue = parseInt(top3Str.slice(0, 3), 10) || 0;
+
+  const product = (topValue * 5).toString();
+  const runningDigits = product.split('').map(char => {
+    return (parseInt(char, 10) + 5) % 10;
+  });
+
+  return Array.from(new Set(runningDigits)).sort((a, b) => a - b);
+}
 
 export interface BacktestResult {
   totalRounds: number;

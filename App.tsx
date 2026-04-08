@@ -12,26 +12,57 @@ import {
   backtestPattern,
   findBestPattern,
   calculateCombinedConfidence,
-  filterPatternsByConsecutive,
   analyzeHybridPatterns,
   analyzeRepeatProbability,
-  PATTERNS
+  PATTERNS,
+  calculateRunningDigits
   } from './services/lottoService';
   import { LottoResult, PredictionResult, BacktestResult, Pattern, HybridPatternInfo, RepeatAnalysis } from './types';
+
+  interface StatsResult {
+    topT: string[];
+    topU: string[];
+    chartData: Array<{ num: string, count: number }>;
+    parityData: Array<{ name: string, value: number }>;
+    backyard: string[];
+    aiMaster: string;
+    runningDigits: number[];
+  }
 
   const COLORS = ['#22d3ee', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899'];
 
   const App: React.FC = () => {
   const [allData, setAllData] = useState<LottoResult[]>([]);
   const [loading, setLoading] = useState(true);
-  const [modeLimit, setModeLimit] = useState(40);
   const [yearFilter, setYearFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [manualRes, setManualRes] = useState<PredictionResult | null>(null);
   const [bestPatternInfo, setBestPatternInfo] = useState<{ pattern: Pattern, stats: BacktestResult } | null>(null);
-  const [allPatternStats, setAllPatternStats] = useState<Array<{ name: string, stats: BacktestResult }>>([]);
   const [hybridPatterns, setHybridPatterns] = useState<Array<HybridPatternInfo>>([]);
   const [repeatAnalysis, setRepeatAnalysis] = useState<RepeatAnalysis | null>(null);
+
+  // NEW: Running Digits 30-Draw Statistics
+  const [runningDigitsStats, setRunningDigitsStats] = useState<{
+    history: Array<{
+      date: string;
+      predicted: number[];
+      actual: string;
+      isCorrect: boolean;
+      matchedDigits: number;
+    }>;
+    correct: number;
+    incorrect: number;
+    accuracy: number;
+    currentStreak: number;
+    bestStreak: number;
+  }>({
+    history: [],
+    correct: 0,
+    incorrect: 0,
+    accuracy: 0,
+    currentStreak: 0,
+    bestStreak: 0
+  });
 
   // NEW: Algorithm Leaderboard - เก็บเลขทำนายของทุกสูตร
   const [allPatternPredictions, setAllPatternPredictions] = useState<Array<{
@@ -55,9 +86,17 @@ import {
     loadData();
   }, []);
 
-  const stats = useMemo(() => {
-    if (allData.length === 0) return null;
-    const range = allData.slice(0, modeLimit);
+  const stats = useMemo<StatsResult | null>(() => {
+    if (allData.length === 0) return {
+      topT: [],
+      topU: [],
+      chartData: [],
+      parityData: [],
+      backyard: [],
+      aiMaster: '',
+      runningDigits: []
+    };
+    const range = allData;
     const tens: Record<string, number> = {};
     const units: Record<string, number> = {};
     const frequencies: Record<string, number> = {};
@@ -76,37 +115,39 @@ import {
     const topU = Object.entries(units).sort((a, b) => b[1] - a[1]).slice(0, 2).map(x => x[0]);
     const chartData = Object.entries(frequencies).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([num, count]) => ({ num, count }));
 
-    const masterNums = Array.from(new Set([...topT, ...topU]));
-    let master: string[] = [];
-    if (masterNums.length >= 2) {
-      for (const i of masterNums) {
-        for (const j of masterNums) { if (i !== j) master.push(i + j); }
-      }
-    }
-
     const lastResult = allData[0];
     const activePattern = bestPatternInfo?.pattern || PATTERNS[0];
     const aiMasterNum = activePattern.calc(
       allData.length >= 2 ? parseInt(allData[1].r2, 10) : 0,
       parseInt(lastResult.r2, 10),
       lastResult.r4,
-      allData // Pass all historical data for advanced patterns
+      allData
     ).toString().padStart(2, '0');
+
+    // คำนวณเลขเด่นจากสูตรที่ 2: Multiplicative Scalar
+    const runningDigits = calculateRunningDigits(lastResult.r4, parseInt(lastResult.r2, 10));
 
     return {
       topT, topU, chartData,
       parityData: [{ name: 'คู่', value: even }, { name: 'คี่', value: odd }],
       backyard: calculateBackyard(lastResult.r3, lastResult.r4),
-      master: master.slice(0, 8),
-      aiMaster: aiMasterNum
+      aiMaster: aiMasterNum,
+      runningDigits: runningDigits
     };
-  }, [allData, modeLimit, bestPatternInfo]);
+  }, [allData, bestPatternInfo]);
 
   useEffect(() => {
     if (allData.length >= 2 && stats) {
       autoCalculate();
     }
   }, [allData, bestPatternInfo, stats]);
+
+  // Recalculate Running Digits stats when data changes
+  useEffect(() => {
+    if (allData.length >= 2) {
+      calculateRunningDigitsStats(allData);
+    }
+  }, [allData]);
 
   const loadData = async () => {
     setLoading(true);
@@ -131,13 +172,6 @@ import {
         setBestPatternInfo(best);
       }
 
-      // Basic pattern stats สำหรับ Leaderboard
-      const allStats = PATTERNS.map(p => ({
-        name: p.name,
-        stats: backtestPattern(data, p, 20)
-      })).sort((a, b) => b.stats.directAccuracy - a.stats.directAccuracy || b.stats.runningAccuracy - a.stats.runningAccuracy);
-      setAllPatternStats(allStats);
-
       // REPEAT ANALYSIS - วิเคราะห์โอกาสออกซ้ำของเลขล่าสุด
       const lastR2 = data[0].r2.padStart(2, '0');
       const repeat = analyzeRepeatProbability(data, lastR2, 100);
@@ -147,21 +181,83 @@ import {
     setLoading(false);
   };
 
-  const autoCalculate = () => {
-    console.log('\n🔄 RE-ANALYZE Button Clicked!');
-    console.log('   allData.length:', allData?.length);
-    console.log('   bestPatternInfo:', bestPatternInfo);
-    console.log('   stats:', stats);
+  // NEW: Function to calculate Running Digits 30-Draw Statistics
+  const calculateRunningDigitsStats = (data: LottoResult[]) => {
+    if (data.length < 2) return;
+
+    const history: Array<{
+      date: string;
+      predicted: number[];
+      actual: string;
+      isCorrect: boolean;
+      matchedDigits: number;
+    }> = [];
+
+    let correct = 0;
+    let incorrect = 0;
+    let currentStreak = 0;
+    let bestStreak = 0;
+    let tempStreak = 0;
+
+    // ทดสอบย้อนหลัง 30 งวด
+    const maxRounds = Math.min(30, data.length - 1);
     
-    if (allData.length < 2 || !bestPatternInfo || !stats) {
-      console.log('   ❌ Cannot calculate: Missing required data');
-      console.log('   - allData.length < 2:', allData.length < 2);
-      console.log('   - !bestPatternInfo:', !bestPatternInfo);
-      console.log('   - !stats:', !stats);
-      return;
+    for (let i = 0; i < maxRounds; i++) {
+      const current = data[i];
+      const prev = data[i + 1];
+      
+      if (!current || !prev) continue;
+
+      // คำนวณ Running Digits จากงวดก่อนหน้า
+      const runningDigits = calculateRunningDigits(prev.r4, parseInt(prev.r2, 10));
+      const actualR2 = current.r2;
+      const actualTens = parseInt(actualR2[0], 10);
+      const actualUnits = parseInt(actualR2[1], 10);
+
+      // ตรวจสอบว่าเลขจริงอยู่ใน running digits หรือไม่
+      const hasTens = runningDigits.includes(actualTens);
+      const hasUnits = runningDigits.includes(actualUnits);
+      const matchedDigits = (hasTens ? 1 : 0) + (hasUnits ? 1 : 0);
+      
+      // ถือว่าถูกถ้ามีอย่างน้อย 1 หลัก
+      const isCorrect = matchedDigits > 0;
+
+      if (isCorrect) {
+        correct++;
+        tempStreak++;
+        bestStreak = Math.max(bestStreak, tempStreak);
+      } else {
+        incorrect++;
+        tempStreak = 0;
+      }
+
+      currentStreak = tempStreak;
+
+      history.push({
+        date: current.date,
+        predicted: runningDigits,
+        actual: actualR2,
+        isCorrect,
+        matchedDigits
+      });
     }
 
-    console.log('   ✅ Starting calculation...');
+    const accuracy = history.length > 0 ? (correct / history.length * 100) : 0;
+
+    setRunningDigitsStats({
+      history: history.slice(0, 30),
+      correct,
+      incorrect,
+      accuracy,
+      currentStreak,
+      bestStreak
+    });
+  };
+
+  const autoCalculate = () => {
+    if (allData.length < 2 || !bestPatternInfo || !stats) {
+      return;
+    }
 
     const lastResult = allData[0];
     const prevResult = allData[1];
@@ -171,19 +267,13 @@ import {
     const lastR3 = lastResult.r3;
     const lastR4 = lastResult.r4;
 
-    console.log('   lastResult:', lastResult);
-    console.log('   prevResult:', prevResult);
-
     const activePattern = bestPatternInfo.pattern;
-    console.log('   activePattern:', activePattern.name);
 
     // Predictions from ALL patterns for convergence check
     const allPredictions = PATTERNS.map(p => ({
       name: p.name,
       value: p.calc(prevR2, lastR2, lastR4, allData).toString().padStart(2, '0')
     }));
-
-    console.log('   allPredictions:', allPredictions);
 
     const resPri = allPredictions.find(p => p.name === activePattern.name)?.value || allPredictions[0].value;
     const resNum = parseInt(resPri, 10);
@@ -203,7 +293,7 @@ import {
       stats.topU
     );
 
-    // NEW: บันทึกเลขทำนายของทุกสูตรสำหรับ Algorithm Leaderboard
+    // บันทึกเลขทำนายของทุกสูตรสำหรับ Algorithm Leaderboard
     const latestResult = allData[0];
     const latestR2 = latestResult.r2.padStart(2, '0');
     const latestDrawnDate = latestResult.date;
@@ -220,8 +310,7 @@ import {
       const wasDrawnRecently = recentDrawnNumbers.includes(predictionNum);
 
       // คำนวณเลขกระจก
-      const predNumInt = parseInt(predictionNum, 10);
-      const mirrorStr = getMirror(predictionNum);
+      const mirrorNumber = getMirror(predictionNum);
 
       // คำนวณ running digits
       const tens = predictionNum[0];
@@ -244,20 +333,11 @@ import {
         stabilityScore: hybridInfo?.stabilityScore || 0,
         isRecentlyDrawn: isRecentlyDrawn,
         lastDrawnDate: wasDrawnRecently ? latestDrawnDate : '',
-        mirrorNumber: mirrorStr,
+        mirrorNumber: mirrorNumber,
         runningDigits: runningDigits
       };
     });
     setAllPatternPredictions(patternPredictions);
-
-    console.log('   ✅ Setting manualRes:', {
-      primary: resPri,
-      mirror: mirrorStr,
-      rhythm: ((parseInt(resPri[0]) + 5) % 10).toString() + ((parseInt(resPri[1]) + 3) % 10).toString(),
-      triple: predictedH.toString() + resPri,
-      confidence: combinedConfidence,
-      formulaName: activePattern.name
-    });
 
     setManualRes({
       primary: resPri,
@@ -295,15 +375,6 @@ import {
         </div>
         
         <div className="flex flex-wrap justify-center gap-4 items-center">
-          <div className="bg-slate-900/60 border border-slate-800 px-4 py-2 rounded-xl flex items-center gap-3">
-            <span className="text-[10px] font-black text-slate-500 tracking-wider">ANALYSIS DEPTH</span>
-            <input 
-              type="number" 
-              value={modeLimit} 
-              onChange={e => setModeLimit(parseInt(e.target.value))} 
-              className="w-12 bg-transparent border-none text-cyan-400 font-black text-center outline-none" 
-            />
-          </div>
           <button onClick={loadData} className="btn-sync">
             {loading ? 'SYNCING DATA...' : 'SYNC SYSTEM'}
           </button>
@@ -331,18 +402,58 @@ import {
               </div>
             </div>
 
-            <div className="glass-card !border-t-4 !border-t-cyan-500">
+            {/* Running Digits Card */}
+            <div className="glass-card !border-t-4 !border-t-cyan-500 relative overflow-hidden group">
+              <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
+                <svg className="w-24 h-24 text-cyan-500" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" />
+                </svg>
+              </div>
               <p className="section-title text-cyan-500">
-                 <span className="w-2 h-2 bg-cyan-500 rounded-full"></span>
-                 MASTER SELECTION (ชุดเด่น)
+                <span className="w-2 h-2 bg-cyan-500 rounded-full animate-pulse"></span>
+                RUNNING DIGITS
               </p>
-              <div className="grid grid-cols-4 gap-3 mt-4">
-                {stats?.master.map((n, i) => (
-                  <div key={i} className="aspect-square flex items-center justify-center bg-slate-900/60 border border-slate-800 rounded-2xl text-xl font-black text-white hover:border-cyan-500/50 hover:bg-cyan-500/10 transition-all cursor-default group">
-                    <span className="group-hover:scale-110 transition-transform">{n}</span>
+              <div className="mt-6 grid grid-cols-5 gap-3">
+                {stats?.runningDigits.map((digit, idx) => (
+                  <div
+                    key={idx}
+                    className="aspect-square flex items-center justify-center bg-slate-900/60 rounded-xl border border-cyan-500/20 group-hover:border-cyan-500/40 transition-all"
+                  >
+                    <span className="text-2xl font-black text-white group-hover:text-cyan-400 group-hover:scale-110 transition-all">
+                      {digit}
+                    </span>
                   </div>
                 ))}
               </div>
+              <div className="mt-4 flex justify-between items-center text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                <span>Alternative Numbers</span>
+                <span className="text-cyan-400">{stats?.runningDigits.length} digits</span>
+              </div>
+
+              {/* RUNNING DIGITS 30-DRAW STATISTICS - Simple */}
+              {runningDigitsStats.history.length > 0 && (
+                <div className="mt-6 pt-6 border-t border-cyan-500/20">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] font-black text-cyan-500 uppercase tracking-widest">
+                      📊 สถิติย้อนหลัง 30 งวด
+                    </p>
+                    <div className="flex items-center gap-6">
+                      <div className="text-center">
+                        <p className="text-[9px] font-black text-slate-600 uppercase mb-1">ถูก</p>
+                        <p className="text-2xl font-black text-emerald-400">{runningDigitsStats.correct}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-[9px] font-black text-slate-600 uppercase mb-1">ผิด</p>
+                        <p className="text-2xl font-black text-red-400">{runningDigitsStats.incorrect}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-[9px] font-black text-slate-600 uppercase mb-1">แม่น</p>
+                        <p className="text-2xl font-black text-cyan-400">{runningDigitsStats.accuracy.toFixed(1)}%</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
