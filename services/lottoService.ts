@@ -126,13 +126,14 @@ export function analyzeRepeatProbability(
   }
 
   // คำนวณ % การออกซ้ำในงวดถัดไป
-  const repeatPercentage = totalOccurrences > 0 
-    ? (repeatAfterOne / (totalOccurrences - 1)) * 100 
+  // Avoid division by zero: ถ้า totalOccurrences <= 1 ไม่สามารถคำนวณอัตราได้
+  const repeatPercentage = totalOccurrences > 1
+    ? (repeatAfterOne / (totalOccurrences - 1)) * 100
     : 0;
 
   // ค่าเฉลี่ยช่องว่างระหว่างการออก
-  const averageGap = gaps.length > 0 
-    ? gaps.reduce((a, b) => a + b, 0) / gaps.length 
+  const averageGap = gaps.length > 0
+    ? gaps.reduce((a, b) => a + b, 0) / gaps.length
     : 0;
 
   // หาวันที่ออกครั้งล่าสุด

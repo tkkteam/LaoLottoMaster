@@ -484,7 +484,7 @@ import {
                     repeatAnalysis.confidenceLevel === 'MEDIUM' ? 'text-amber-400' :
                     'text-emerald-400'
                   }`}>
-                    {repeatAnalysis.repeatPercentage.toFixed(1)}%
+                    {Number.isFinite(repeatAnalysis.repeatPercentage) ? repeatAnalysis.repeatPercentage.toFixed(1) : '0.0'}%
                   </span>
                   <p className="text-[8px] font-black uppercase text-slate-500">Repeat Rate</p>
                 </div>
@@ -513,16 +513,16 @@ import {
               <div className="mb-4">
                 <div className="flex justify-between text-[9px] font-black text-slate-600 uppercase mb-2">
                   <span>Repeat Probability</span>
-                  <span>{repeatAnalysis.repeatPercentage.toFixed(1)}%</span>
+                  <span>{Number.isFinite(repeatAnalysis.repeatPercentage) ? repeatAnalysis.repeatPercentage.toFixed(1) : '0.0'}%</span>
                 </div>
                 <div className="h-3 w-full bg-slate-800 rounded-full overflow-hidden">
-                  <div 
+                  <div
                     className={`h-full transition-all duration-1000 ${
                       repeatAnalysis.repeatPercentage > 20 ? 'bg-red-500' :
                       repeatAnalysis.repeatPercentage > 10 ? 'bg-amber-500' :
                       'bg-emerald-500'
                     }`}
-                    style={{ width: `${Math.min(repeatAnalysis.repeatPercentage * 2, 100)}%` }}
+                    style={{ width: `${Math.min(Number.isFinite(repeatAnalysis.repeatPercentage) ? repeatAnalysis.repeatPercentage * 2 : 0, 100)}%` }}
                   ></div>
                 </div>
               </div>
