@@ -199,13 +199,29 @@ import {
     let bestStreak = 0;
     let tempStreak = 0;
 
-    // ทดสอบย้อนหลัง 30 งวด
-    const maxRounds = Math.min(30, data.length - 1);
-    
-    for (let i = 0; i < maxRounds; i++) {
+    // เริ่มนับจากงวด 02/01/2569 ถึงปัจจุบัน
+    // หางวดที่วันที่ 02/01/2569
+    let startIndex = -1;
+    for (let i = 0; i < data.length; i++) {
+      if (data[i].date === '02/01/2569') {
+        startIndex = i;
+        break;
+      }
+    }
+
+    // ถ้าไม่พบงวด 02/01/2569 ให้เริ่มจากงวดล่าสุด
+    if (startIndex === -1) {
+      console.warn('ไม่พบงวด 02/01/2569 ในข้อมูล เริ่มจากงวดล่าสุดแทน');
+      startIndex = 0;
+    }
+
+    // ตรวจสอบทั้งหมดตั้งแต่งวด 02/01/2569 ถึงปัจจุบัน
+    const maxRounds = Math.min(startIndex, data.length - 1);
+
+    for (let i = 0; i <= maxRounds; i++) {
       const current = data[i];
       const prev = data[i + 1];
-      
+
       if (!current || !prev) continue;
 
       // คำนวณ Running Digits จากงวดก่อนหน้า
@@ -218,7 +234,7 @@ import {
       const hasTens = runningDigits.includes(actualTens);
       const hasUnits = runningDigits.includes(actualUnits);
       const matchedDigits = (hasTens ? 1 : 0) + (hasUnits ? 1 : 0);
-      
+
       // ถือว่าถูกถ้ามีอย่างน้อย 1 หลัก
       const isCorrect = matchedDigits > 0;
 
@@ -233,22 +249,27 @@ import {
 
       currentStreak = tempStreak;
 
-      history.push({
-        date: current.date,
-        predicted: runningDigits,
-        actual: actualR2,
-        isCorrect,
-        matchedDigits
-      });
+      // เก็บประวัติแค่ 30 งวดล่าสุดสำหรับการแสดง
+      if (i <= 30) {
+        history.push({
+          date: current.date,
+          predicted: runningDigits,
+          actual: actualR2,
+          isCorrect,
+          matchedDigits
+        });
+      }
     }
 
-    const accuracy = history.length > 0 ? (correct / history.length * 100) : 0;
+    // คำนวณความแม่นยำจากทั้งหมด (ตั้งแต่ 02/01/2569 ถึงปัจจุบัน)
+    const totalRounds = correct + incorrect;
+    const accuracy = totalRounds > 0 ? (correct / totalRounds * 100) : 0;
 
     setRunningDigitsStats({
-      history: history.slice(0, 30),
-      correct,
-      incorrect,
-      accuracy,
+      history: history.slice(0, 30),  // แสดงแค่ 30 งวดล่าสุด
+      correct,                         // นับจากทั้งหมดตั้งแต่ 02/01/2569
+      incorrect,                       // นับจากทั้งหมดตั้งแต่ 02/01/2569
+      accuracy,                        // คำนวณจากทั้งหมดตั้งแต่ 02/01/2569
       currentStreak,
       bestStreak
     });
