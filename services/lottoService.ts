@@ -410,48 +410,52 @@ export const PATTERNS: Pattern[] = [
   {
     name: "Markov Chain (มาร์คอฟเชน)",
     calc: (p, l, l4, results?) => {
-      // Markov Chain: วิเคราะห์ความน่าจะเป็นจากการเปลี่ยนสถานะ
-      if (!results || results.length < 10) {
-        // Fallback to simple calculation if insufficient data
-        const tens = (Math.floor(l / 10) + Math.floor(p / 10) + 3) % 10;
-        const units = ((l % 10) + (p % 10) + 7) % 10;
+      // Markov Chain V2: วิเคราะห์การเปลี่ยนสถานะแบบถ่วงน้ำหนัก (Weighted Transition)
+      if (!results || results.length < 15) {
+        // Fallback: ใช้กฎ Golden Ratio ผสมฐานเลขเดิม
+        const tens = (Math.floor(l / 10) + 7) % 10;
+        const units = ((l % 10) + 3) % 10;
         return (tens * 10) + units;
       }
 
-      // Build transition matrix from historical data
-      const transitionMatrix: number[][] = Array(100).fill(null).map(() => Array(10).fill(0));
+      // ใช้ข้อมูลย้อนหลังสูงสุด 60 งวดเพื่อสร้าง Matrix
+      const analysisWindow = Math.min(60, results.length);
+      const history = results.slice(0, analysisWindow);
 
-      for (let i = 0; i < results.length - 1; i++) {
-        const current = parseInt(results[i].r2, 10);
-        const next = parseInt(results[i - 1]?.r2 || '0', 10);
+      // สร้าง Matrix แบบถ่วงน้ำหนัก (งวดใหม่มีผลมากกว่างวดเก่า)
+      const tensTransition = Array(10).fill(0).map(() => Array(10).fill(0));
+      const unitsTransition = Array(10).fill(0).map(() => Array(10).fill(0));
 
-        // Track tens digit transition
-        const currentTens = Math.floor(current / 10);
-        const nextTens = Math.floor(next / 10);
-        transitionMatrix[currentTens][nextTens]++;
+      for (let i = 0; i < history.length - 1; i++) {
+        const current = parseInt(history[i + 1].r2, 10);
+        const next = parseInt(history[i].r2, 10);
+        
+        const weight = (analysisWindow - i) / analysisWindow; // งวดใหม่น้ำหนักเยอะ
+
+        const cT = Math.floor(current / 10);
+        const nT = Math.floor(next / 10);
+        const cU = current % 10;
+        const nU = next % 10;
+
+        tensTransition[cT][nT] += weight;
+        unitsTransition[cU][nU] += weight;
       }
 
-      // Predict next tens digit based on last result
       const lastTens = Math.floor(l / 10);
-      const tensTransitions = transitionMatrix[lastTens];
-      const maxTensProb = Math.max(...tensTransitions);
-      const predictedTens = maxTensProb > 0 ? tensTransitions.indexOf(maxTensProb) : (lastTens + 2) % 10;
-
-      // Build units transition matrix
-      const transitionMatrixUnits: number[][] = Array(100).fill(null).map(() => Array(10).fill(0));
-      for (let i = 0; i < results.length - 1; i++) {
-        const current = parseInt(results[i].r2, 10);
-        const next = parseInt(results[i - 1]?.r2 || '0', 10);
-
-        const currentUnits = current % 10;
-        const nextUnits = next % 10;
-        transitionMatrixUnits[currentUnits][nextUnits]++;
-      }
-
       const lastUnits = l % 10;
-      const unitsTransitions = transitionMatrixUnits[lastUnits];
-      const maxUnitsProb = Math.max(...unitsTransitions);
-      const predictedUnits = maxUnitsProb > 0 ? unitsTransitions.indexOf(maxUnitsProb) : (lastUnits + 3) % 10;
+
+      // คำนวณความน่าจะเป็นสะสม
+      const getBestNext = (matrix: number[][], current: number) => {
+        const row = matrix[current];
+        const maxVal = Math.max(...row);
+        if (maxVal === 0) return (current + 5) % 10; // Fallback แบบกระจายตัว
+        
+        // ถ้ามีหลายค่าที่เท่ากัน ให้เลือกเลขที่มีความถี่รวมสูงสุด (Global Popularity)
+        return row.indexOf(maxVal);
+      };
+
+      const predictedTens = getBestNext(tensTransition, lastTens);
+      const predictedUnits = getBestNext(unitsTransition, lastUnits);
 
       return (predictedTens * 10) + predictedUnits;
     }
@@ -528,67 +532,46 @@ export const PATTERNS: Pattern[] = [
 
       const analysisWindow = Math.min(50, results.length);
       const recentData = results.slice(0, analysisWindow);
-      const lastR4 = results[0].r4.padStart(4, '0');
+      const lastResult = results[0]; // งวดล่าสุดที่มีในประวัติ (ใช้เป็นฐานทำนาย)
+      const lastR4 = lastResult.r4.padStart(4, '0');
 
-      // ===== 1. MARKOV TRANSITION MATRIX (40%) =====
-      // สร้าง matrix ความน่าจะเป็นของการเปลี่ยนสถานะ
-      const tensTransition: number[][] = Array(10).fill(null).map(() => Array(10).fill(0));
-      const unitsTransition: number[][] = Array(10).fill(null).map(() => Array(10).fill(0));
+      // ===== 1. WEIGHTED MARKOV TRANSITION (40%) =====
+      const tensTransition = Array(10).fill(0).map(() => Array(10).fill(0));
+      const unitsTransition = Array(10).fill(0).map(() => Array(10).fill(0));
 
-      // นับความถี่ของการเปลี่ยนสถานะ
-      for (let i = 1; i < analysisWindow; i++) {
-        const currentR2 = parseInt(results[i].r2, 10);
-        const nextR2 = parseInt(results[i - 1].r2, 10);
+      for (let i = 0; i < recentData.length - 1; i++) {
+        const weight = (recentData.length - i) / recentData.length;
+        const currentR2 = parseInt(recentData[i + 1].r2, 10);
+        const nextR2 = parseInt(recentData[i].r2, 10);
 
-        const currentTens = Math.floor(currentR2 / 10);
-        const currentUnits = currentR2 % 10;
-        const nextTens = Math.floor(nextR2 / 10);
-        const nextUnits = nextR2 % 10;
-
-        tensTransition[currentTens][nextTens]++;
-        unitsTransition[currentUnits][nextUnits]++;
+        tensTransition[Math.floor(currentR2 / 10)][Math.floor(nextR2 / 10)] += weight;
+        unitsTransition[currentR2 % 10][nextR2 % 10] += weight;
       }
 
-      // คำนวณความน่าจะเป็น
-      const lastTens = Math.floor(l / 10);
-      const lastUnits = l % 10;
+      const lTens = Math.floor(parseInt(lastResult.r2, 10) / 10);
+      const lUnits = parseInt(lastResult.r2, 10) % 10;
 
-      const tensProbs = tensTransition[lastTens];
-      const unitsProbs = unitsTransition[lastUnits];
+      const getBestMarkov = (matrix: number[][], current: number) => {
+        const row = matrix[current];
+        const max = Math.max(...row);
+        return max > 0 ? row.indexOf(max) : (current + 1) % 10;
+      };
 
-      // หาค่าสูงสุด
-      const maxTensProb = Math.max(...tensProbs);
-      const maxUnitsProb = Math.max(...unitsProbs);
-
-      const predictedTensMarkov = maxTensProb > 0 ? tensProbs.indexOf(maxTensProb) : lastTens;
-      const predictedUnitsMarkov = maxUnitsProb > 0 ? unitsProbs.indexOf(maxUnitsProb) : lastUnits;
+      const predictedTensMarkov = getBestMarkov(tensTransition, lTens);
+      const predictedUnitsMarkov = getBestMarkov(unitsTransition, lUnits);
 
       // ===== 2. 4D POSITION PATTERN (30%) =====
-      // วิเคราะห์ว่าหลักสิบ-หน่วย ใน 4 หลัก มี pattern อย่างไร
-      const positionPattern: number[][] = [
-        Array(10).fill(0),  // ตำแหน่งที่ 3 (หลักสิบ)
-        Array(10).fill(0)   // ตำแหน่งที่ 4 (หลักหน่วย)
-      ];
-
-      recentData.forEach(r => {
+      // วิเคราะห์ตำแหน่งใน 4 หลัก (ใช้ความถี่ถ่วงน้ำหนัก)
+      const positionPattern = [Array(10).fill(0), Array(10).fill(0)];
+      recentData.forEach((r, idx) => {
+        const weight = (recentData.length - idx) / recentData.length;
         const r4 = r.r4.padStart(4, '0');
-        positionPattern[0][parseInt(r4[2], 10)]++;  // หลักสิบจาก 4 หลัก
-        positionPattern[1][parseInt(r4[3], 10)]++;  // หลักหน่วยจาก 4 หลัก
+        positionPattern[0][parseInt(r4[2], 10)] += weight;
+        positionPattern[1][parseInt(r4[3], 10)] += weight;
       });
 
-      // หาคะแนนความถี่
-      const lastTensFrom4D = parseInt(lastR4[2], 10);
-      const lastUnitsFrom4D = parseInt(lastR4[3], 10);
-
-      const maxPosTens = Math.max(...positionPattern[0]);
-      const maxPosUnits = Math.max(...positionPattern[1]);
-
-      const tensFreqScore = positionPattern[0][lastTensFrom4D] / maxPosTens;
-      const unitsFreqScore = positionPattern[1][lastUnitsFrom4D] / maxPosUnits;
-
-      // ถ้ายิ่งออกบ่อย ยิ่งมีโอกาสออกอีก
-      const predictedTens4D = tensFreqScore > 0.5 ? lastTensFrom4D : positionPattern[0].indexOf(maxPosTens);
-      const predictedUnits4D = unitsFreqScore > 0.5 ? lastUnitsFrom4D : positionPattern[1].indexOf(maxPosUnits);
+      const predictedTens4D = positionPattern[0].indexOf(Math.max(...positionPattern[0]));
+      const predictedUnits4D = positionPattern[1].indexOf(Math.max(...positionPattern[1]));
 
       // ===== 3. RECENT TREND (30%) =====
       // ดู 10 งวดล่าสุด เพื่อจับแนวโน้มระยะสั้น
@@ -819,8 +802,10 @@ export function backtestPattern(
       console.log(`     next=${next.date} r2=${next.r2} (target)`);
     }
 
-    // Pass historical data (newer first for advanced patterns)
-    const historicalResults = results.slice(0, i + 2);
+    // Pass historical data (Ensuring NO data leakage: target result must NOT be in history)
+    // results sorted [0]=newest, [1], [2]...
+    // To predict next=results[i-1], we must only use results[i] and older.
+    const historicalResults = results.slice(i); 
     const predicted = pattern.calc(prevR2, currentR2, current.r4, historicalResults);
     const isDirect = predicted === nextR2;
 
