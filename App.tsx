@@ -17,7 +17,7 @@ import {
   PATTERNS,
   calculateRunningDigits
   } from './services/lottoService';
-  import { LottoResult, PredictionResult, BacktestResult, Pattern, HybridPatternInfo, RepeatAnalysis } from './types';
+  import { LottoResult, PredictionResult, BacktestResult, Pattern, HybridPatternInfo, RepeatAnalysis, RunningDigitLog } from './types';
 
   interface StatsResult {
     topT: string[];
@@ -40,16 +40,12 @@ import {
   const [bestPatternInfo, setBestPatternInfo] = useState<{ pattern: Pattern, stats: BacktestResult } | null>(null);
   const [hybridPatterns, setHybridPatterns] = useState<Array<HybridPatternInfo>>([]);
   const [repeatAnalysis, setRepeatAnalysis] = useState<RepeatAnalysis | null>(null);
+  const [showRunningLogs, setShowRunningLogs] = useState(false);
+  const [showExplanation, setShowExplanation] = useState(false);
 
   // NEW: Running Digits 30-Draw Statistics
   const [runningDigitsStats, setRunningDigitsStats] = useState<{
-    history: Array<{
-      date: string;
-      predicted: number[];
-      actual: string;
-      isCorrect: boolean;
-      matchedDigits: number;
-    }>;
+    history: Array<import('./types').RunningDigitLog>;
     correct: number;
     incorrect: number;
     accuracy: number;
@@ -185,13 +181,7 @@ import {
   const calculateRunningDigitsStats = (data: LottoResult[]) => {
     if (data.length < 2) return;
 
-    const history: Array<{
-      date: string;
-      predicted: number[];
-      actual: string;
-      isCorrect: boolean;
-      matchedDigits: number;
-    }> = [];
+    const history: Array<import('./types').RunningDigitLog> = [];
 
     let correct = 0;
     let incorrect = 0;
@@ -200,7 +190,6 @@ import {
     let tempStreak = 0;
 
     // เริ่มนับจากงวด 02/01/2569 ถึงปัจจุบัน
-    // หางวดที่วันที่ 02/01/2569
     let startIndex = -1;
     for (let i = 0; i < data.length; i++) {
       if (data[i].date === '02/01/2569') {
@@ -209,11 +198,21 @@ import {
       }
     }
 
-    // ถ้าไม่พบงวด 02/01/2569 ให้เริ่มจากงวดล่าสุด
     if (startIndex === -1) {
-      console.warn('ไม่พบงวด 02/01/2569 ในข้อมูล เริ่มจากงวดล่าสุดแทน');
       startIndex = 0;
     }
+
+    // งวดที่กำลังจะมาถึง (Pending)
+    const latest = data[0];
+    const nextRunningDigits = calculateRunningDigits(latest.r4, parseInt(latest.r2, 10));
+    history.push({
+      date: 'งวดถัดไป',
+      predicted: nextRunningDigits,
+      actual: '--',
+      isCorrect: false,
+      matchedDigits: 0,
+      status: 'PENDING'
+    });
 
     // ตรวจสอบทั้งหมดตั้งแต่งวด 02/01/2569 ถึงปัจจุบัน
     const maxRounds = Math.min(startIndex, data.length - 1);
@@ -224,18 +223,15 @@ import {
 
       if (!current || !prev) continue;
 
-      // คำนวณ Running Digits จากงวดก่อนหน้า
       const runningDigits = calculateRunningDigits(prev.r4, parseInt(prev.r2, 10));
       const actualR2 = current.r2;
       const actualTens = parseInt(actualR2[0], 10);
       const actualUnits = parseInt(actualR2[1], 10);
 
-      // ตรวจสอบว่าเลขจริงอยู่ใน running digits หรือไม่
       const hasTens = runningDigits.includes(actualTens);
       const hasUnits = runningDigits.includes(actualUnits);
       const matchedDigits = (hasTens ? 1 : 0) + (hasUnits ? 1 : 0);
 
-      // ถือว่าถูกถ้ามีอย่างน้อย 1 หลัก
       const isCorrect = matchedDigits > 0;
 
       if (isCorrect) {
@@ -249,27 +245,24 @@ import {
 
       currentStreak = tempStreak;
 
-      // เก็บประวัติแค่ 30 งวดล่าสุดสำหรับการแสดง
-      if (i <= 30) {
-        history.push({
-          date: current.date,
-          predicted: runningDigits,
-          actual: actualR2,
-          isCorrect,
-          matchedDigits
-        });
-      }
+      history.push({
+        date: current.date,
+        predicted: runningDigits,
+        actual: actualR2,
+        isCorrect,
+        matchedDigits,
+        status: isCorrect ? 'WIN' : 'LOSS'
+      });
     }
 
-    // คำนวณความแม่นยำจากทั้งหมด (ตั้งแต่ 02/01/2569 ถึงปัจจุบัน)
     const totalRounds = correct + incorrect;
     const accuracy = totalRounds > 0 ? (correct / totalRounds * 100) : 0;
 
     setRunningDigitsStats({
-      history: history.slice(0, 30),  // แสดงแค่ 30 งวดล่าสุด
-      correct,                         // นับจากทั้งหมดตั้งแต่ 02/01/2569
-      incorrect,                       // นับจากทั้งหมดตั้งแต่ 02/01/2569
-      accuracy,                        // คำนวณจากทั้งหมดตั้งแต่ 02/01/2569
+      history: history.slice(0, 50), // เพิ่มการแสดงเป็น 50 งวด
+      correct,
+      incorrect,
+      accuracy,
       currentStreak,
       bestStreak
     });
@@ -451,6 +444,19 @@ import {
                 <span className="text-cyan-400">{stats?.runningDigits.length} digits</span>
               </div>
 
+              <div className="mt-6 flex justify-center">
+                <button
+                  onClick={() => setShowRunningLogs(!showRunningLogs)}
+                  className={`px-4 py-2 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all ${
+                    showRunningLogs
+                      ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-lg shadow-cyan-500/30'
+                      : 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30 hover:bg-cyan-500/20'
+                  }`}
+                >
+                  {showRunningLogs ? '📖 HIDE DAILY LOGS' : '📋 VIEW DAILY LOGS'}
+                </button>
+              </div>
+
               {/* RUNNING DIGITS 30-DRAW STATISTICS - Simple */}
               {runningDigitsStats.history.length > 0 && (
                 <div className="mt-6 pt-6 border-t border-cyan-500/20">
@@ -476,6 +482,109 @@ import {
                 </div>
               )}
             </div>
+
+            {/* DAILY LOGS MODAL-LIKE SECTION */}
+            {showRunningLogs && (
+              <div className="lg:col-span-12 glass-card !border-t-4 !border-t-cyan-500 animate-in fade-in slide-in-from-top-4 duration-500">
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-xl font-black text-white flex items-center gap-3">
+                    <span className="text-2xl">📋</span>
+                    RUNNING DIGITS DAILY LOGS
+                  </h3>
+                  <div className="flex gap-4 items-center">
+                    <div className="text-[10px] font-black text-slate-500 uppercase">
+                      Total: <span className="text-cyan-400">{runningDigitsStats.history.length} งวด</span>
+                    </div>
+                    <button
+                      onClick={() => setShowRunningLogs(false)}
+                      className="text-slate-500 hover:text-white transition-colors"
+                    >
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-800">
+                        <th className="text-left py-4 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">วันที่</th>
+                        <th className="text-center py-4 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">เลขเด่นที่คำนวณได้</th>
+                        <th className="text-center py-4 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">ผลที่ออก (2 ตัว)</th>
+                        <th className="text-center py-4 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">ผลลัพธ์</th>
+                        <th className="text-right py-4 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">สถานะ</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {runningDigitsStats.history.map((log, idx) => (
+                        <tr
+                          key={idx}
+                          className={`border-b border-slate-800/50 hover:bg-slate-800/20 transition-colors ${
+                            log.status === 'WIN' ? 'bg-emerald-500/5' : log.status === 'LOSS' ? 'bg-red-500/5' : ''
+                          }`}
+                        >
+                          <td className="py-4 px-4">
+                            <span className={`font-black ${log.status === 'PENDING' ? 'text-cyan-400 animate-pulse' : 'text-slate-400'}`}>
+                              {log.date}
+                            </span>
+                          </td>
+                          <td className="py-4 px-4 text-center">
+                            <div className="flex justify-center gap-2">
+                              {log.predicted.map((d, i) => (
+                                <span
+                                  key={i}
+                                  className={`w-8 h-8 flex items-center justify-center rounded-lg font-black text-sm ${
+                                    log.status === 'WIN' && log.actual.includes(d.toString())
+                                      ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20 scale-110'
+                                      : 'bg-slate-800 text-white'
+                                  }`}
+                                >
+                                  {d}
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+                          <td className="py-4 px-4 text-center">
+                            <span className={`text-xl font-black ${log.status === 'WIN' ? 'text-emerald-400 glow-emerald' : 'text-slate-500'}`}>
+                              {log.actual}
+                            </span>
+                          </td>
+                          <td className="py-4 px-4 text-center">
+                            {log.status === 'WIN' ? (
+                              <div className="flex flex-col items-center">
+                                <span className="text-emerald-400 font-black text-xs">MATCHED</span>
+                                <span className="text-[10px] text-slate-600 font-black">{log.matchedDigits} DIGITS</span>
+                              </div>
+                            ) : log.status === 'LOSS' ? (
+                              <span className="text-red-400 font-black text-xs opacity-50">MISS</span>
+                            ) : (
+                              <span className="text-cyan-400 font-black text-xs animate-pulse">AWAITING...</span>
+                            )}
+                          </td>
+                          <td className="py-4 px-4 text-right">
+                            {log.status === 'WIN' ? (
+                              <span className="px-3 py-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full text-[10px] font-black uppercase tracking-widest">
+                                WIN ✅
+                              </span>
+                            ) : log.status === 'LOSS' ? (
+                              <span className="px-3 py-1 bg-red-500/20 text-red-400 border border-red-500/30 rounded-full text-[10px] font-black uppercase tracking-widest">
+                                LOSS ❌
+                              </span>
+                            ) : (
+                              <span className="px-3 py-1 bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 rounded-full text-[10px] font-black uppercase tracking-widest animate-pulse">
+                                PENDING 🔄
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* REPEAT ANALYSIS */}
@@ -692,6 +801,16 @@ import {
                 <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">การจัดอันดับประสิทธิภาพ AI ENGINE แบบ Hybrid</p>
               </div>
               <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setShowExplanation(!showExplanation)}
+                  className={`px-3 py-1.5 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all ${
+                    showExplanation
+                      ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-lg shadow-amber-500/30'
+                      : 'bg-amber-500/10 text-amber-400 border-amber-500/30 hover:bg-amber-500/20'
+                  }`}
+                >
+                  {showExplanation ? '📖 HIDE GUIDE' : '📖 VIEW GUIDE'}
+                </button>
                 <div className="flex items-center gap-2 px-3 py-2 bg-emerald-500/10 rounded-full border border-emerald-500/30">
                   <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
                   <span className="text-[10px] font-black text-emerald-400 uppercase tracking-tighter">
@@ -832,195 +951,197 @@ import {
             </div>
             
             {/* HYBRID EXPLANATION - คำอธิบายความหมายต่างๆ */}
-            <div className="mt-6 p-5 bg-slate-900/40 rounded-2xl border border-slate-800">
-              <h4 className="text-sm font-black text-white mb-4 flex items-center gap-2">
-                <span className="text-lg">📖</span> คำอธิบายความหมายของแต่ละตัวชี้วัด
-              </h4>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-[10px]">
-                {/* คอลัมน์ซ้าย */}
-                <div className="space-y-4">
-                  {/* Historical Accuracy */}
-                  <div className="flex items-start gap-3">
-                    <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-cyan-500/20 border border-cyan-500/30 flex-shrink-0">
-                      <span className="text-xs font-black text-cyan-400">H</span>
+            {showExplanation && (
+              <div className="mt-6 p-5 bg-slate-900/40 rounded-2xl border border-slate-800 animate-in fade-in slide-in-from-top-4 duration-500">
+                <h4 className="text-sm font-black text-white mb-4 flex items-center gap-2">
+                  <span className="text-lg">📖</span> คำอธิบายความหมายของแต่ละตัวชี้วัด
+                </h4>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-[10px]">
+                  {/* คอลัมน์ซ้าย */}
+                  <div className="space-y-4">
+                    {/* Historical Accuracy */}
+                    <div className="flex items-start gap-3">
+                      <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-cyan-500/20 border border-cyan-500/30 flex-shrink-0">
+                        <span className="text-xs font-black text-cyan-400">H</span>
+                      </div>
+                      <div>
+                        <p className="font-black text-cyan-400 uppercase">Historical (30) - ความแม่นยำย้อนหลัง 30 งวด</p>
+                        <p className="text-slate-500 mt-1">
+                          เปอร์เซ็นต์การทายถูกตรงตัวใน 30 งวดย้อนหลัง ยิ่งสูงยิ่งดี (แนะนำ &gt; 15%)
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-black text-cyan-400 uppercase">Historical (30) - ความแม่นยำย้อนหลัง 30 งวด</p>
-                      <p className="text-slate-500 mt-1">
-                        เปอร์เซ็นต์การทายถูกตรงตัวใน 30 งวดย้อนหลัง ยิ่งสูงยิ่งดี (แนะนำ &gt; 15%)
-                      </p>
+
+                    {/* Current Accuracy */}
+                    <div className="flex items-start gap-3">
+                      <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex-shrink-0">
+                        <span className="text-xs font-black text-emerald-400">C</span>
+                      </div>
+                      <div>
+                        <p className="font-black text-emerald-400 uppercase">Current (10) - ความแม่นยำ 10 งวดล่าสุด</p>
+                        <p className="text-slate-500 mt-1">
+                          เปอร์เซ็นต์การทายถูกตรงตัวใน 10 งวดล่าสุด สะท้อนประสิทธิภาพปัจจุบัน (สำคัญที่สุด!)
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Stability */}
+                    <div className="flex items-start gap-3">
+                      <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-amber-500/20 border border-amber-500/30 flex-shrink-0">
+                        <span className="text-xs font-black text-amber-400">S</span>
+                      </div>
+                      <div>
+                        <p className="font-black text-amber-400 uppercase">Stability - คะแนนความมั่นคง (0-100%)</p>
+                        <p className="text-slate-500 mt-1">
+                          วัดความสม่ำเสมอของสูตร สูตรที่มี Performance คงที่ได้คะแนนสูง
+                          <br />
+                          <span className="text-emerald-400">≥ 70% = มั่นคงมาก</span> | <span className="text-amber-400">50-69% = ปานกลาง</span> | <span className="text-red-400">&lt; 50% = ไม่มั่นคง</span>
+                          <br />
+                          <span className="text-slate-600">⚠️ ถ้า Accuracy &lt; 5% จะได้ Stability = 0% ทันที</span>
+                        </p>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Current Accuracy */}
-                  <div className="flex items-start gap-3">
-                    <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex-shrink-0">
-                      <span className="text-xs font-black text-emerald-400">C</span>
+                  {/* คอลัมน์ขวา */}
+                  <div className="space-y-4">
+                    {/* Max Consecutive */}
+                    <div className="flex items-start gap-3">
+                      <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-purple-500/20 border border-purple-500/30 flex-shrink-0">
+                        <span className="text-xs font-black text-purple-400">M</span>
+                      </div>
+                      <div>
+                        <p className="font-black text-purple-400 uppercase">Max Consecutive - ทายถูกติดต่อกันสูงสุด</p>
+                        <p className="text-slate-500 mt-1">
+                          จำนวนงวดสูงสุดที่สูตรทายถูกติดต่อกัน (ตรงตัว หรือ Running) ยิ่งสูงยิ่งแสดงถึงความน่าเชื่อถือ
+                          <br />
+                          <span className="text-emerald-400">≥ 6 งวด = ดีมาก</span> | <span className="text-amber-400">4-5 งวด = พอใช้</span> | <span className="text-red-400">&lt; 4 งวด = ควรระวัง</span>
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-black text-emerald-400 uppercase">Current (10) - ความแม่นยำ 10 งวดล่าสุด</p>
-                      <p className="text-slate-500 mt-1">
-                        เปอร์เซ็นต์การทายถูกตรงตัวใน 10 งวดล่าสุด สะท้อนประสิทธิภาพปัจจุบัน (สำคัญที่สุด!)
-                      </p>
-                    </div>
-                  </div>
 
-                  {/* Stability */}
-                  <div className="flex items-start gap-3">
-                    <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-amber-500/20 border border-amber-500/30 flex-shrink-0">
-                      <span className="text-xs font-black text-amber-400">S</span>
+                    {/* Current Consecutive */}
+                    <div className="flex items-start gap-3">
+                      <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-pink-500/20 border border-pink-500/30 flex-shrink-0">
+                        <span className="text-xs font-black text-pink-400">CC</span>
+                      </div>
+                      <div>
+                        <p className="font-black text-pink-400 uppercase">Current - ทายถูกติดต่อกันปัจจุบัน</p>
+                        <p className="text-slate-500 mt-1">
+                          จำนวนงวดที่ทายถูกติดต่อกันในปัจจุบัน (กำลังเกิดขึ้น) ถ้ายิ่งสูงแสดงว่าสูตรกำลัง "Hot"
+                          <br />
+                          <span className="text-emerald-400">≥ 6 งวด = กำลัง Hot 🔥</span> | <span className="text-amber-400">3-5 งวด = ปกติ</span> | <span className="text-red-400">0-2 งวด = กำลัง Cold ❄️</span>
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-black text-amber-400 uppercase">Stability - คะแนนความมั่นคง (0-100%)</p>
-                      <p className="text-slate-500 mt-1">
-                        วัดความสม่ำเสมอของสูตร สูตรที่มี Performance คงที่ได้คะแนนสูง
-                        <br />
-                        <span className="text-emerald-400">≥ 70% = มั่นคงมาก</span> | <span className="text-amber-400">50-69% = ปานกลาง</span> | <span className="text-red-400">&lt; 50% = ไม่มั่นคง</span>
-                        <br />
-                        <span className="text-slate-600">⚠️ ถ้า Accuracy &lt; 5% จะได้ Stability = 0% ทันที</span>
-                      </p>
+
+                    {/* Trend Arrows */}
+                    <div className="flex items-start gap-3">
+                      <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-blue-500/20 border border-blue-500/30 flex-shrink-0">
+                        <span className="text-xs">📊</span>
+                      </div>
+                      <div>
+                        <p className="font-black text-blue-400 uppercase">Trend - แนวโน้ม (ลูกศร)</p>
+                        <p className="text-slate-500 mt-1">
+                          <span className="text-emerald-400">📈 กำลังดีขึ้น</span> = Current &gt; Historical + 5% (สูตรกำลังพัฒนา)
+                          <br />
+                          <span className="text-amber-400">➡️ คงที่</span> = ต่างกันไม่เกิน ±5% (เสถียร)
+                          <br />
+                          <span className="text-red-400">📉 กำลังแย่ลง</span> = Current &lt; Historical - 5% (ควรเปลี่ยนสูตร)
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                {/* คอลัมน์ขวา */}
-                <div className="space-y-4">
-                  {/* Max Consecutive */}
-                  <div className="flex items-start gap-3">
-                    <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-purple-500/20 border border-purple-500/30 flex-shrink-0">
-                      <span className="text-xs font-black text-purple-400">M</span>
+                {/* สัญลักษณ์เพิ่มเติม */}
+                <div className="mt-5 pt-4 border-t border-slate-800">
+                  <h5 className="text-xs font-black text-slate-400 mb-3">สัญลักษณ์และสถานะ:</h5>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[10px]">
+                    <div className="flex items-start gap-2">
+                      <span className="text-base">👑</span>
+                      <div>
+                        <p className="font-black text-emerald-400">Active Master (มงกุฎ)</p>
+                        <p className="text-slate-600">สูตรที่ระบบเลือกใช้งานอยู่ เปลี่ยนเฉพาะเมื่อล้มเหลว หรือมีสูตรที่ดีกว่าชัดเจน</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-black text-purple-400 uppercase">Max Consecutive - ทายถูกติดต่อกันสูงสุด</p>
-                      <p className="text-slate-500 mt-1">
-                        จำนวนงวดสูงสุดที่สูตรทายถูกติดต่อกัน (ตรงตัว หรือ Running) ยิ่งสูงยิ่งแสดงถึงความน่าเชื่อถือ
-                        <br />
-                        <span className="text-emerald-400">≥ 6 งวด = ดีมาก</span> | <span className="text-amber-400">4-5 งวด = พอใช้</span> | <span className="text-red-400">&lt; 4 งวด = ควรระวัง</span>
-                      </p>
+                    <div className="flex items-start gap-2">
+                      <span className="text-base text-emerald-400 font-black">✓</span>
+                      <div>
+                        <p className="font-black text-emerald-400">Qualified (เครื่องหมายถูก)</p>
+                        <p className="text-slate-600">สูตรที่ผ่านเกณฑ์ Max Consecutive ≥ 4 งวด มีความน่าเชื่อถือ</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="text-base text-red-400 font-black">✗</span>
+                      <div>
+                        <p className="font-black text-red-400">Unqualified (เครื่องหมายผิด)</p>
+                        <p className="text-slate-600">สูตรที่ไม่ผ่านเกณฑ์ Max Consecutive &lt; 4 งวด ควรหลีกเลี่ยง</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="text-base">🔥</span>
+                      <div>
+                        <p className="font-black text-amber-400">Hot / Cold</p>
+                        <p className="text-slate-600">Hot = กำลังทายถูกติดต่อกันหลายงวด | Cold = กำลังทายผิดหลายงวดติด</p>
+                      </div>
                     </div>
                   </div>
+                </div>
 
-                  {/* Current Consecutive */}
-                  <div className="flex items-start gap-3">
-                    <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-pink-500/20 border border-pink-500/30 flex-shrink-0">
-                      <span className="text-xs font-black text-pink-400">CC</span>
-                    </div>
-                    <div>
-                      <p className="font-black text-pink-400 uppercase">Current - ทายถูกติดต่อกันปัจจุบัน</p>
-                      <p className="text-slate-500 mt-1">
-                        จำนวนงวดที่ทายถูกติดต่อกันในปัจจุบัน (กำลังเกิดขึ้น) ถ้ายิ่งสูงแสดงว่าสูตรกำลัง "Hot"
-                        <br />
-                        <span className="text-emerald-400">≥ 6 งวด = กำลัง Hot 🔥</span> | <span className="text-amber-400">3-5 งวด = ปกติ</span> | <span className="text-red-400">0-2 งวด = กำลัง Cold ❄️</span>
-                      </p>
+                {/* การให้คะแนน */}
+                <div className="mt-4 pt-4 border-t border-slate-800">
+                  <h5 className="text-xs font-black text-slate-400 mb-2">🏆 การคำนวณคะแนนจัดอันดับ:</h5>
+                  <div className="bg-slate-950/60 p-3 rounded-xl border border-slate-800 text-[10px] space-y-1">
+                    <p className="text-slate-500">คะแนนรวม = (Current × 40%) + (Stability × 30%) + (Historical × 20%) + (Trend × 10%)</p>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
+                      <div className="bg-emerald-500/10 p-2 rounded-lg border border-emerald-500/20">
+                        <p className="font-black text-emerald-400">Current 40%</p>
+                        <p className="text-slate-600">สำคัญที่สุด</p>
+                      </div>
+                      <div className="bg-amber-500/10 p-2 rounded-lg border border-amber-500/20">
+                        <p className="font-black text-amber-400">Stability 30%</p>
+                        <p className="text-slate-600">ความมั่นคง</p>
+                      </div>
+                      <div className="bg-cyan-500/10 p-2 rounded-lg border border-cyan-500/20">
+                        <p className="font-black text-cyan-400">Historical 20%</p>
+                        <p className="text-slate-600">อดีต</p>
+                      </div>
+                      <div className="bg-blue-500/10 p-2 rounded-lg border border-blue-500/20">
+                        <p className="font-black text-blue-400">Trend 10%</p>
+                        <p className="text-slate-600">แนวโน้ม</p>
+                      </div>
                     </div>
                   </div>
+                </div>
 
-                  {/* Trend Arrows */}
-                  <div className="flex items-start gap-3">
-                    <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-blue-500/20 border border-blue-500/30 flex-shrink-0">
-                      <span className="text-xs">📊</span>
-                    </div>
-                    <div>
-                      <p className="font-black text-blue-400 uppercase">Trend - แนวโน้ม (ลูกศร)</p>
-                      <p className="text-slate-500 mt-1">
-                        <span className="text-emerald-400">📈 กำลังดีขึ้น</span> = Current &gt; Historical + 5% (สูตรกำลังพัฒนา)
-                        <br />
-                        <span className="text-amber-400">➡️ คงที่</span> = ต่างกันไม่เกิน ±5% (เสถียร)
-                        <br />
-                        <span className="text-red-400">📉 กำลังแย่ลง</span> = Current &lt; Historical - 5% (ควรเปลี่ยนสูตร)
-                      </p>
-                    </div>
+                {/* คำแนะนำ */}
+                <div className="mt-4 pt-4 border-t border-slate-800">
+                  <h5 className="text-xs font-black text-slate-400 mb-2">💡 คำแนะนำการใช้งาน:</h5>
+                  <div className="bg-emerald-500/5 p-3 rounded-xl border border-emerald-500/20 text-[10px] space-y-2">
+                    <p className="text-slate-400">
+                      <span className="text-emerald-400 font-black">✅ ควรใช้สูตรที่:</span>
+                    </p>
+                    <ul className="text-slate-500 space-y-1 ml-4 list-disc">
+                      <li>มี <span className="text-emerald-400">Current (10) &gt; 10%</span> (ทายถูกอย่างน้อย 1 ใน 10 งวด)</li>
+                      <li>มี <span className="text-emerald-400">Stability &gt; 60%</span> (มีความมั่นคง)</li>
+                      <li>มี <span className="text-emerald-400">Max Consecutive ≥ 4 งวด</span> (เคยทายถูกติดต่อกัน)</li>
+                      <li>มี <span className="text-emerald-400">Trend 📈 หรือ ➡️</span> (กำลังดีขึ้นหรือคงที่)</li>
+                    </ul>
+                    <p className="text-slate-400 mt-2">
+                      <span className="text-red-400 font-black">❌ ควรหลีกเลี่ยงสูตรที่:</span>
+                    </p>
+                    <ul className="text-slate-500 space-y-1 ml-4 list-disc">
+                      <li>มี <span className="text-red-400">Current (10) = 0%</span> (ไม่ถูกเลย 10 งวดล่าสุด)</li>
+                      <li>มี <span className="text-red-400">Stability &lt; 40%</span> (ไม่มั่นคง)</li>
+                      <li>มี <span className="text-red-400">Trend 📉</span> (กำลังแย่ลง)</li>
+                      <li>มีเครื่องหมาย <span className="text-red-400">✗</span> (ไม่ผ่านเกณฑ์)</li>
+                    </ul>
                   </div>
                 </div>
               </div>
-
-              {/* สัญลักษณ์เพิ่มเติม */}
-              <div className="mt-5 pt-4 border-t border-slate-800">
-                <h5 className="text-xs font-black text-slate-400 mb-3">สัญลักษณ์และสถานะ:</h5>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[10px]">
-                  <div className="flex items-start gap-2">
-                    <span className="text-base">👑</span>
-                    <div>
-                      <p className="font-black text-emerald-400">Active Master (มงกุฎ)</p>
-                      <p className="text-slate-600">สูตรที่ระบบเลือกใช้งานอยู่ เปลี่ยนเฉพาะเมื่อล้มเหลว หรือมีสูตรที่ดีกว่าชัดเจน</p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <span className="text-base text-emerald-400 font-black">✓</span>
-                    <div>
-                      <p className="font-black text-emerald-400">Qualified (เครื่องหมายถูก)</p>
-                      <p className="text-slate-600">สูตรที่ผ่านเกณฑ์ Max Consecutive ≥ 4 งวด มีความน่าเชื่อถือ</p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <span className="text-base text-red-400 font-black">✗</span>
-                    <div>
-                      <p className="font-black text-red-400">Unqualified (เครื่องหมายผิด)</p>
-                      <p className="text-slate-600">สูตรที่ไม่ผ่านเกณฑ์ Max Consecutive &lt; 4 งวด ควรหลีกเลี่ยง</p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <span className="text-base">🔥</span>
-                    <div>
-                      <p className="font-black text-amber-400">Hot / Cold</p>
-                      <p className="text-slate-600">Hot = กำลังทายถูกติดต่อกันหลายงวด | Cold = กำลังทายผิดหลายงวดติด</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* การให้คะแนน */}
-              <div className="mt-4 pt-4 border-t border-slate-800">
-                <h5 className="text-xs font-black text-slate-400 mb-2">🏆 การคำนวณคะแนนจัดอันดับ:</h5>
-                <div className="bg-slate-950/60 p-3 rounded-xl border border-slate-800 text-[10px] space-y-1">
-                  <p className="text-slate-500">คะแนนรวม = (Current × 40%) + (Stability × 30%) + (Historical × 20%) + (Trend × 10%)</p>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
-                    <div className="bg-emerald-500/10 p-2 rounded-lg border border-emerald-500/20">
-                      <p className="font-black text-emerald-400">Current 40%</p>
-                      <p className="text-slate-600">สำคัญที่สุด</p>
-                    </div>
-                    <div className="bg-amber-500/10 p-2 rounded-lg border border-amber-500/20">
-                      <p className="font-black text-amber-400">Stability 30%</p>
-                      <p className="text-slate-600">ความมั่นคง</p>
-                    </div>
-                    <div className="bg-cyan-500/10 p-2 rounded-lg border border-cyan-500/20">
-                      <p className="font-black text-cyan-400">Historical 20%</p>
-                      <p className="text-slate-600">อดีต</p>
-                    </div>
-                    <div className="bg-blue-500/10 p-2 rounded-lg border border-blue-500/20">
-                      <p className="font-black text-blue-400">Trend 10%</p>
-                      <p className="text-slate-600">แนวโน้ม</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* คำแนะนำ */}
-              <div className="mt-4 pt-4 border-t border-slate-800">
-                <h5 className="text-xs font-black text-slate-400 mb-2">💡 คำแนะนำการใช้งาน:</h5>
-                <div className="bg-emerald-500/5 p-3 rounded-xl border border-emerald-500/20 text-[10px] space-y-2">
-                  <p className="text-slate-400">
-                    <span className="text-emerald-400 font-black">✅ ควรใช้สูตรที่:</span>
-                  </p>
-                  <ul className="text-slate-500 space-y-1 ml-4 list-disc">
-                    <li>มี <span className="text-emerald-400">Current (10) &gt; 10%</span> (ทายถูกอย่างน้อย 1 ใน 10 งวด)</li>
-                    <li>มี <span className="text-emerald-400">Stability &gt; 60%</span> (มีความมั่นคง)</li>
-                    <li>มี <span className="text-emerald-400">Max Consecutive ≥ 4 งวด</span> (เคยทายถูกติดต่อกัน)</li>
-                    <li>มี <span className="text-emerald-400">Trend 📈 หรือ ➡️</span> (กำลังดีขึ้นหรือคงที่)</li>
-                  </ul>
-                  <p className="text-slate-400 mt-2">
-                    <span className="text-red-400 font-black">❌ ควรหลีกเลี่ยงสูตรที่:</span>
-                  </p>
-                  <ul className="text-slate-500 space-y-1 ml-4 list-disc">
-                    <li>มี <span className="text-red-400">Current (10) = 0%</span> (ไม่ถูกเลย 10 งวดล่าสุด)</li>
-                    <li>มี <span className="text-red-400">Stability &lt; 40%</span> (ไม่มั่นคง)</li>
-                    <li>มี <span className="text-red-400">Trend 📉</span> (กำลังแย่ลง)</li>
-                    <li>มีเครื่องหมาย <span className="text-red-400">✗</span> (ไม่ผ่านเกณฑ์)</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
+            )}
           </section>
 
           {/* NEW: Algorithm Leaderboard - แสดงเลขทำนายของแต่ละสูตร */}

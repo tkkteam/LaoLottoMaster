@@ -77,4 +77,13 @@ export interface AccuracyTrend {
   recommendation: string;
 }
 
+export interface RunningDigitLog {
+  date: string;
+  predicted: number[];
+  actual: string;
+  isCorrect: boolean;
+  matchedDigits: number;
+  status: 'WIN' | 'LOSS' | 'PENDING';
+}
+
 
