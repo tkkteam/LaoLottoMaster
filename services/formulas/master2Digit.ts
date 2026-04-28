@@ -8,7 +8,7 @@ const MIRRORS: Record<string, string> = {
 export const master2DigitFormula: Pattern = {
   name: "Master 2-Digit (สูตรอมตะ)",
   calc: (p, l, l4) => {
-    const s = l4 || l.toString().padStart(4, '0');
+    const s = (l4 && l4.length > 0 ? l4 : l.toString()).padStart(4, '0');
     const a = parseInt(s[0], 10) || 0;
     const b = parseInt(s[1], 10) || 0;
     const c = parseInt(s[2], 10) || 0;

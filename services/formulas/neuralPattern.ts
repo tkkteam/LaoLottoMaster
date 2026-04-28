@@ -44,10 +44,10 @@ export const neuralPatternFormula: Pattern = {
 
     const units = Math.round(
       (avgUnits * 0.35) +
-      ((l % 10) + momentumUnits) * 0.35 +
+      (((l % 10) + momentumUnits) * 0.35) +
       (cycleUnits * 0.30)
     ) % 10;
 
-    return ((tens + 10) % 10 * 10) + ((units + 10) % 10);
+    return (((tens + 10) % 10) * 10) + ((units + 10) % 10);
   }
 };

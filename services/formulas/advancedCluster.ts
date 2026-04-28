@@ -19,12 +19,12 @@ export const advancedClusterFormula: Pattern = {
      * - Recent Trend: 20% (แนวโน้มล่าสุด)
      */
     
-    const s = l4 || l.toString().padStart(4, '0');
+    const s = (l4 || l.toString().padStart(4, '0')).padStart(4, '0');
     
     // ===== ส่วนที่ 1: ADVANCED HIGH-DIGIT SUM (40%) =====
-    const hundredThousand = parseInt(s[0], 10) || 0;
-    const tenThousand = parseInt(s[1], 10) || 0;
-    const baseDigit = (hundredThousand + tenThousand) % 10;
+    const thousand = parseInt(s[0], 10) || 0;
+    const hundred = parseInt(s[1], 10) || 0;
+    const baseDigit = (thousand + hundred) % 10;
     const d1 = (baseDigit + 3) % 10;
     const d2 = (baseDigit + 7) % 10;
     
@@ -54,7 +54,7 @@ export const advancedClusterFormula: Pattern = {
         .slice(0, 3)
         .map(x => x.digit);
       
-      const lastDigit = l % 10;
+      const lastDigit = parseInt(results[0].r2, 10) % 10;
       const pairs: Array<{ number: number, score: number }> = [];
       
       hotDigits.forEach(digit => {

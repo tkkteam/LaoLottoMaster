@@ -55,7 +55,25 @@ export const hotNumbersFormula: Pattern = {
       for (const units of topUnits) {
         const number = (tens * 10) + units;
         // คะแนน = ความถี่หลักสิบ + ความถี่หลักหน่วย
-        const score = tensCount[tens] + unitsCount[units];
+        let score = tensCount[tens] + unitsCount[units];
+        
+        // ===== ANTI-REPEAT LOGIC =====
+        // ถ้าเลขนี้เพิ่งออก 2 งวดติดกัน ให้ลดคะแนนลง 50%
+        if (results && results.length >= 2) {
+          const lastR2 = parseInt(results[0].r2, 10);
+          const prevR2 = parseInt(results[1].r2, 10);
+          
+          // ถ้าออก 2 งวดติดกัน และเป็นเลขเดียวกัน
+          if (lastR2 === prevR2 && number === lastR2) {
+            score = score * 0.5; // ลดคะแนนลง 50%
+          }
+          
+          // ถ้าเพิ่งออกในงวดล่าสุด (แต่ไม่ติดกัน) ให้ลดคะแนนลง 20%
+          if (number === lastR2 && lastR2 !== prevR2) {
+            score = score * 0.8; // ลดคะแนนลง 20%
+          }
+        }
+        
         pairs.push({ number, score });
       }
     }

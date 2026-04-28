@@ -34,8 +34,9 @@ export const markovChainFormula: Pattern = {
       unitsTransition[cU][nU] += weight;
     }
 
-    const lastTens = Math.floor(l / 10);
-    const lastUnits = l % 10;
+    const lastR2 = parseInt(history[0].r2, 10);
+    const lastTens = Math.floor(lastR2 / 10);
+    const lastUnits = lastR2 % 10;
 
     // คำนวณความน่าจะเป็นสะสม
     const getBestNext = (matrix: number[][], current: number) => {
@@ -43,7 +44,7 @@ export const markovChainFormula: Pattern = {
       const maxVal = Math.max(...row);
       if (maxVal === 0) return (current + 5) % 10; // Fallback แบบกระจายตัว
       
-      // ถ้ามีหลายค่าที่เท่ากัน ให้เลือกเลขที่มีความถี่รวมสูงสุด (Global Popularity)
+      // ถ้ามีหลายค่าที่เท่ากัน ให้เลือกตัวแรก (ซ้ายสุด)
       return row.indexOf(maxVal);
     };
 

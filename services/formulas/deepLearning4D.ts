@@ -21,8 +21,8 @@ export const deepLearning4DFormula: Pattern = {
 
     const analysisWindow = Math.min(50, results.length);
     const recentData = results.slice(0, analysisWindow);
-    const lastResult = results[0]; // งวดล่าสุดที่มีในประวัติ (ใช้เป็นฐานทำนาย)
-    const lastR4 = lastResult.r4.padStart(4, '0');
+    const lastResult = results[0]; // งวดล่าสุด (index 0 = ล่าสุด)
+    const lastR4 = (lastResult.r4 || '').padStart(4, '0');
 
     // ===== 1. WEIGHTED MARKOV TRANSITION (40%) =====
     const tensTransition = Array(10).fill(0).map(() => Array(10).fill(0));
@@ -54,7 +54,7 @@ export const deepLearning4DFormula: Pattern = {
     const positionPattern = [Array(10).fill(0), Array(10).fill(0)];
     recentData.forEach((r, idx) => {
       const weight = (recentData.length - idx) / recentData.length;
-      const r4 = r.r4.padStart(4, '0');
+      const r4 = (r.r4 || '').padStart(4, '0');
       positionPattern[0][parseInt(r4[2], 10)] += weight;
       positionPattern[1][parseInt(r4[3], 10)] += weight;
     });

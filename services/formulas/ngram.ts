@@ -19,15 +19,19 @@ export const ngramPattern: Pattern = {
     }
 
     const ngramLength = 3; // ดู 3 งวดล่าสุด
-    const currentSequence: number[] = [l, p];
-    if (results.length >= 3) {
-      currentSequence.push(parseInt(results[2].r2, 10));
-    }
+    
+    // สร้างลำดับปัจจุบันจากข้อมูลจริง (results[0]=ล่าสุด, results[1]=รอง, results[2]=ที่ 3)
+    const currentSequence: number[] = [
+      parseInt(results[0].r2, 10),
+      parseInt(results[1].r2, 10),
+      parseInt(results[2].r2, 10)
+    ];
 
     // ค้นหาลำดับที่คล้ายกันในอดีต
     const matches: Array<{ sequence: number[], nextNumber: number, similarity: number }> = [];
 
-    for (let i = 2; i < results.length - 1 && i < 50; i++) {
+    // เริ่มจาก i = 3 เพื่อข้าม 3 งวดล่าสุดที่กำลังวิเคราะห์
+    for (let i = 3; i < results.length - 1 && i < 50; i++) {
       const histSequence: number[] = [
         parseInt(results[i].r2, 10),
         parseInt(results[i - 1]?.r2 || '0', 10),
@@ -41,7 +45,8 @@ export const ngramPattern: Pattern = {
       }
 
       const similarity = 1 / (1 + distance);
-      const nextNumber = parseInt(results[i - 1]?.r2 || '0', 10);
+      // เลขที่ออกหลังจากลำดับนี้คือ results[i - 3]
+      const nextNumber = parseInt(results[i - 3]?.r2 || '0', 10);
 
       matches.push({ sequence: histSequence, nextNumber, similarity });
     }

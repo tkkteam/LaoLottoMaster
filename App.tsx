@@ -1,4 +1,4 @@
-﻿
+
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -289,7 +289,53 @@ import {
       value: p.calc(prevR2, lastR2, lastR4, allData).toString().padStart(2, '0')
     }));
 
-    const resPri = allPredictions.find(p => p.name === activePattern.name)?.value || allPredictions[0].value;
+    // ===== ENSEMBLE METHOD WITH ANTI-REPEAT =====
+    // ผสมผลลัพธ์จากทุกสูตรแทนการเลือกสูตรเดียว
+    const lastR2Str = lastResult.r2.padStart(2, '0');
+    const prevR2Str = prevResult.r2.padStart(2, '0');
+    const isRepeatDetected = lastR2Str === prevR2Str;
+    
+    // นับคะแนนของแต่ละเลข (ถ่วงน้ำหนักตามความแม่นยำของสูตร)
+    const numberScores: Record<string, number> = {};
+    const numberVotes: Record<string, number> = {};
+    
+    allPredictions.forEach(pred => {
+      const hybridInfo = hybridPatterns.find(h => h.pattern.name === pred.name);
+      const accuracy = hybridInfo?.currentStats.directAccuracy || 0;
+      const weight = Math.max(1, accuracy / 5); // น้ำหนักขั้นต่ำ 1, สูงสุด 20
+      
+      // ===== ANTI-REPEAT LOGIC =====
+      // ถ้าตรวจพบ Repeat และเลขนี้คือเลขที่ออกซ้ำ ให้ลดคะแนนลง 90%
+      let finalWeight = weight;
+      if (isRepeatDetected && pred.value === lastR2Str) {
+        finalWeight = weight * 0.1; // ลดคะแนนลง 90%
+      }
+      
+      numberScores[pred.value] = (numberScores[pred.value] || 0) + finalWeight;
+      numberVotes[pred.value] = (numberVotes[pred.value] || 0) + 1;
+    });
+    
+    // เรียงตามคะแนน
+    const sortedNumbers = Object.entries(numberScores)
+      .sort((a, b) => b[1] - a[1]);
+    
+    // เลือกเลขที่ได้คะแนนสูงสุด
+    let resPri = sortedNumbers[0]?.[0] || allPredictions[0].value;
+    
+    // ===== SECONDARY ANTI-REPEAT =====
+    // ถ้าเลขที่ได้ยังคงเป็นเลขที่ออกซ้ำ และคะแนนไม่แตกต่างจากอันดับ 2 มาก
+    // ให้เลือกอันดับ 2 แทน
+    if (isRepeatDetected && resPri === lastR2Str && sortedNumbers.length >= 2) {
+      const topScore = sortedNumbers[0][1];
+      const secondScore = sortedNumbers[1][1];
+      const scoreDiff = topScore - secondScore;
+      
+      // ถ้าคะแนนแตกต่างน้อยกว่า 50% ให้เลือกอันดับ 2
+      if (scoreDiff < topScore * 0.5) {
+        resPri = sortedNumbers[1][0];
+      }
+    }
+    
     const resNum = parseInt(resPri, 10);
 
     const hLast = parseInt(lastR3[0], 10) || 0;
@@ -483,105 +529,136 @@ import {
               )}
             </div>
 
-            {/* DAILY LOGS MODAL-LIKE SECTION */}
+            {/* DAILY LOGS MODAL OVERLAY */}
             {showRunningLogs && (
-              <div className="lg:col-span-12 glass-card !border-t-4 !border-t-cyan-500 animate-in fade-in slide-in-from-top-4 duration-500">
-                <div className="flex justify-between items-center mb-6">
-                  <h3 className="text-xl font-black text-white flex items-center gap-3">
-                    <span className="text-2xl">📋</span>
-                    RUNNING DIGITS DAILY LOGS
-                  </h3>
-                  <div className="flex gap-4 items-center">
-                    <div className="text-[10px] font-black text-slate-500 uppercase">
-                      Total: <span className="text-cyan-400">{runningDigitsStats.history.length} งวด</span>
-                    </div>
-                    <button
-                      onClick={() => setShowRunningLogs(false)}
-                      className="text-slate-500 hover:text-white transition-colors"
-                    >
-                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-800">
-                        <th className="text-left py-4 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">วันที่</th>
-                        <th className="text-center py-4 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">เลขเด่นที่คำนวณได้</th>
-                        <th className="text-center py-4 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">ผลที่ออก (2 ตัว)</th>
-                        <th className="text-center py-4 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">ผลลัพธ์</th>
-                        <th className="text-right py-4 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">สถานะ</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {runningDigitsStats.history.map((log, idx) => (
-                        <tr
-                          key={idx}
-                          className={`border-b border-slate-800/50 hover:bg-slate-800/20 transition-colors ${
-                            log.status === 'WIN' ? 'bg-emerald-500/5' : log.status === 'LOSS' ? 'bg-red-500/5' : ''
-                          }`}
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-in fade-in duration-300">
+                {/* Backdrop */}
+                <div
+                  className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm"
+                  onClick={() => setShowRunningLogs(false)}
+                ></div>
+                
+                {/* Modal Content */}
+                <div className="relative w-full max-w-6xl max-h-[90vh] bg-slate-900 border border-cyan-500/30 rounded-3xl shadow-2xl shadow-cyan-500/10 overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
+                  {/* Header */}
+                  <div className="flex-shrink-0 p-6 border-b border-cyan-500/20 bg-gradient-to-r from-cyan-500/10 to-transparent">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <h3 className="text-2xl font-black text-white flex items-center gap-3">
+                          <span className="text-3xl">📋</span>
+                          RUNNING DIGITS DAILY LOGS
+                        </h3>
+                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">
+                          สถิติย้อนหลัง <span className="text-cyan-400">{runningDigitsStats.history.length} งวด</span>
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        {/* Stats Summary */}
+                        <div className="flex gap-4">
+                          <div className="text-center px-3 py-1 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
+                            <p className="text-[9px] font-black text-slate-500 uppercase">ถูก</p>
+                            <p className="text-lg font-black text-emerald-400">{runningDigitsStats.correct}</p>
+                          </div>
+                          <div className="text-center px-3 py-1 bg-red-500/10 rounded-lg border border-red-500/20">
+                            <p className="text-[9px] font-black text-slate-500 uppercase">ผิด</p>
+                            <p className="text-lg font-black text-red-400">{runningDigitsStats.incorrect}</p>
+                          </div>
+                          <div className="text-center px-3 py-1 bg-cyan-500/10 rounded-lg border border-cyan-500/20">
+                            <p className="text-[9px] font-black text-slate-500 uppercase">แม่น</p>
+                            <p className="text-lg font-black text-cyan-400">{runningDigitsStats.accuracy.toFixed(1)}%</p>
+                          </div>
+                        </div>
+                        {/* Close Button */}
+                        <button
+                          onClick={() => setShowRunningLogs(false)}
+                          className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-800 border border-slate-700 text-slate-400 hover:text-white hover:border-cyan-500/50 transition-all"
                         >
-                          <td className="py-4 px-4">
-                            <span className={`font-black ${log.status === 'PENDING' ? 'text-cyan-400 animate-pulse' : 'text-slate-400'}`}>
-                              {log.date}
-                            </span>
-                          </td>
-                          <td className="py-4 px-4 text-center">
-                            <div className="flex justify-center gap-2">
-                              {log.predicted.map((d, i) => (
-                                <span
-                                  key={i}
-                                  className={`w-8 h-8 flex items-center justify-center rounded-lg font-black text-sm ${
-                                    log.status === 'WIN' && log.actual.includes(d.toString())
-                                      ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20 scale-110'
-                                      : 'bg-slate-800 text-white'
-                                  }`}
-                                >
-                                  {d}
-                                </span>
-                              ))}
-                            </div>
-                          </td>
-                          <td className="py-4 px-4 text-center">
-                            <span className={`text-xl font-black ${log.status === 'WIN' ? 'text-emerald-400 glow-emerald' : 'text-slate-500'}`}>
-                              {log.actual}
-                            </span>
-                          </td>
-                          <td className="py-4 px-4 text-center">
-                            {log.status === 'WIN' ? (
-                              <div className="flex flex-col items-center">
-                                <span className="text-emerald-400 font-black text-xs">MATCHED</span>
-                                <span className="text-[10px] text-slate-600 font-black">{log.matchedDigits} DIGITS</span>
-                              </div>
-                            ) : log.status === 'LOSS' ? (
-                              <span className="text-red-400 font-black text-xs opacity-50">MISS</span>
-                            ) : (
-                              <span className="text-cyan-400 font-black text-xs animate-pulse">AWAITING...</span>
-                            )}
-                          </td>
-                          <td className="py-4 px-4 text-right">
-                            {log.status === 'WIN' ? (
-                              <span className="px-3 py-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full text-[10px] font-black uppercase tracking-widest">
-                                WIN ✅
-                              </span>
-                            ) : log.status === 'LOSS' ? (
-                              <span className="px-3 py-1 bg-red-500/20 text-red-400 border border-red-500/30 rounded-full text-[10px] font-black uppercase tracking-widest">
-                                LOSS ❌
-                              </span>
-                            ) : (
-                              <span className="px-3 py-1 bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 rounded-full text-[10px] font-black uppercase tracking-widest animate-pulse">
-                                PENDING 🔄
-                              </span>
-                            )}
-                          </td>
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Table Content - Scrollable */}
+                  <div className="flex-1 overflow-y-auto p-6">
+                    <table className="w-full text-sm">
+                      <thead className="sticky top-0 bg-slate-900 z-10">
+                        <tr className="border-b border-slate-700">
+                          <th className="text-left py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">วันที่</th>
+                          <th className="text-center py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">เลขเด่นที่คำนวณได้</th>
+                          <th className="text-center py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">ผลที่ออก (2 ตัว)</th>
+                          <th className="text-center py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">ผลลัพธ์</th>
+                          <th className="text-right py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">สถานะ</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {runningDigitsStats.history.map((log, idx) => (
+                          <tr
+                            key={idx}
+                            className={`border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors ${
+                              log.status === 'WIN' ? 'bg-emerald-500/5' : log.status === 'LOSS' ? 'bg-red-500/5' : ''
+                            }`}
+                          >
+                            <td className="py-3 px-4">
+                              <span className={`font-black ${log.status === 'PENDING' ? 'text-cyan-400 animate-pulse' : 'text-slate-400'}`}>
+                                {log.date}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <div className="flex justify-center gap-2">
+                                {log.predicted.map((d, i) => (
+                                  <span
+                                    key={i}
+                                    className={`w-8 h-8 flex items-center justify-center rounded-lg font-black text-sm ${
+                                      log.status === 'WIN' && log.actual.includes(d.toString())
+                                        ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20 scale-110'
+                                        : 'bg-slate-800 text-white'
+                                    }`}
+                                  >
+                                    {d}
+                                  </span>
+                                ))}
+                              </div>
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <span className={`text-lg font-black ${log.status === 'WIN' ? 'text-emerald-400' : 'text-slate-500'}`}>
+                                {log.actual}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              {log.status === 'WIN' ? (
+                                <div className="flex flex-col items-center">
+                                  <span className="text-emerald-400 font-black text-xs">MATCHED</span>
+                                  <span className="text-[10px] text-slate-600 font-black">{log.matchedDigits} DIGITS</span>
+                                </div>
+                              ) : log.status === 'LOSS' ? (
+                                <span className="text-red-400 font-black text-xs opacity-50">MISS</span>
+                              ) : (
+                                <span className="text-cyan-400 font-black text-xs animate-pulse">AWAITING...</span>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 text-right">
+                              {log.status === 'WIN' ? (
+                                <span className="px-3 py-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full text-[10px] font-black uppercase tracking-widest">
+                                  WIN ✅
+                                </span>
+                              ) : log.status === 'LOSS' ? (
+                                <span className="px-3 py-1 bg-red-500/20 text-red-400 border border-red-500/30 rounded-full text-[10px] font-black uppercase tracking-widest">
+                                  LOSS ❌
+                                </span>
+                              ) : (
+                                <span className="px-3 py-1 bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 rounded-full text-[10px] font-black uppercase tracking-widest animate-pulse">
+                                  PENDING 🔄
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
             )}
@@ -1144,344 +1221,372 @@ import {
             )}
           </section>
 
-          {/* NEW: Algorithm Leaderboard - แสดงเลขทำนายของแต่ละสูตร */}
+          {/* ALGORITHM LEADERBOARD MODAL OVERLAY */}
           {showLeaderboard && allPatternPredictions.length > 0 && (
-            <section className="glass-card">
-              <div className="flex justify-between items-center mb-8">
-                <div>
-                  <h3 className="text-xl font-black text-white tracking-tight">🎯 Algorithm Leaderboard - เลขทำนายล่าสุด</h3>
-                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">
-                    เปรียบเทียบเลขที่แต่ละสูตรทำนาย พร้อมสถิติย้อนหลัง
-                  </p>
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-in fade-in duration-300">
+              {/* Backdrop */}
+              <div
+                className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm"
+                onClick={() => { setShowLeaderboard(false); setExpandedPattern(null); }}
+              ></div>
+              
+              {/* Modal Content */}
+              <div className="relative w-full max-w-7xl max-h-[90vh] bg-slate-900 border border-purple-500/30 rounded-3xl shadow-2xl shadow-purple-500/10 overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
+                {/* Header */}
+                <div className="flex-shrink-0 p-6 border-b border-purple-500/20 bg-gradient-to-r from-purple-500/10 to-transparent">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <h3 className="text-2xl font-black text-white flex items-center gap-3">
+                        <span className="text-3xl">🎯</span>
+                        ALGORITHM LEADERBOARD
+                      </h3>
+                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">
+                        เปรียบเทียบเลขที่แต่ละสูตรทำนาย พร้อมสถิติย้อนหลัง
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      {/* Stats Summary */}
+                      <div className="flex gap-3">
+                        <div className="text-center px-3 py-1 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
+                          <p className="text-[9px] font-black text-slate-500 uppercase">Qualified</p>
+                          <p className="text-lg font-black text-emerald-400">{hybridPatterns.filter(h => h.isQualified).length}</p>
+                        </div>
+                        <div className="text-center px-3 py-1 bg-purple-500/10 rounded-lg border border-purple-500/20">
+                          <p className="text-[9px] font-black text-slate-500 uppercase">Total</p>
+                          <p className="text-lg font-black text-purple-400">{allPatternPredictions.length}</p>
+                        </div>
+                      </div>
+                      {/* Close Button */}
+                      <button
+                        onClick={() => { setShowLeaderboard(false); setExpandedPattern(null); }}
+                        className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-800 border border-slate-700 text-slate-400 hover:text-white hover:border-purple-500/50 transition-all"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <button 
-                  onClick={() => setShowLeaderboard(false)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-sm font-black text-slate-400 transition-colors"
-                >
-                  ✕ ปิด
-                </button>
-              </div>
-
-              {/* ตารางแสดงเลขทำนาย */}
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-800">
-                      <th className="text-left py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">อันดับ</th>
-                      <th className="text-left py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">สูตร</th>
-                      <th className="text-center py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">เลขทำนาย</th>
-                      <th className="text-center py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">สถานะ</th>
-                      <th className="text-center py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Hist (30)</th>
-                      <th className="text-center py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Curr (10)</th>
-                      <th className="text-center py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Max Streak</th>
-                      <th className="text-center py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Stability</th>
-                      <th className="text-center py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">รายละเอียด</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {allPatternPredictions
-                      .sort((a, b) => {
-                        // เรียงตาม: Active Master ก่อน, ตามด้วย Qualified, แล้วตาม historicalAccuracy
-                        if (a.isActiveMaster && !b.isActiveMaster) return -1;
-                        if (!a.isActiveMaster && b.isActiveMaster) return 1;
-                        if (a.isQualified && !b.isQualified) return -1;
-                        if (!a.isQualified && b.isQualified) return 1;
-                        return b.historicalAccuracy - a.historicalAccuracy;
-                      })
-                      .map((pattern, idx) => (
-                        <tr 
-                          key={pattern.name}
-                          className={`border-b border-slate-800/50 transition-colors ${
-                            pattern.isActiveMaster 
-                              ? 'bg-emerald-500/10 hover:bg-emerald-500/15' 
-                              : pattern.isQualified
-                              ? 'bg-slate-900/30 hover:bg-slate-900/50'
-                              : 'hover:bg-slate-900/30'
-                          }`}
-                        >
-                          <td className="py-3 px-4">
-                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-black text-sm ${
+                
+                {/* Table Content - Scrollable */}
+                <div className="flex-1 overflow-y-auto p-6">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-slate-900 z-10">
+                      <tr className="border-b border-slate-700">
+                        <th className="text-left py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">อันดับ</th>
+                        <th className="text-left py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">สูตร</th>
+                        <th className="text-center py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">เลขทำนาย</th>
+                        <th className="text-center py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">สถานะ</th>
+                        <th className="text-center py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Hist (30)</th>
+                        <th className="text-center py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Curr (10)</th>
+                        <th className="text-center py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Max Streak</th>
+                        <th className="text-center py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Stability</th>
+                        <th className="text-center py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">รายละเอียด</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {allPatternPredictions
+                        .sort((a, b) => {
+                          if (a.isActiveMaster && !b.isActiveMaster) return -1;
+                          if (!a.isActiveMaster && b.isActiveMaster) return 1;
+                          if (a.isQualified && !b.isQualified) return -1;
+                          if (!a.isQualified && b.isQualified) return 1;
+                          return b.historicalAccuracy - a.historicalAccuracy;
+                        })
+                        .map((pattern, idx) => (
+                          <tr 
+                            key={pattern.name}
+                            className={`border-b border-slate-800/50 transition-colors ${
                               pattern.isActiveMaster 
-                                ? 'bg-emerald-500 text-slate-950' 
+                                ? 'bg-emerald-500/10 hover:bg-emerald-500/15' 
                                 : pattern.isQualified
-                                ? 'bg-cyan-500/20 text-cyan-400'
-                                : 'bg-slate-800 text-slate-500'
-                            }`}>
-                              {idx + 1}
-                            </div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className={`font-black text-sm ${
-                              pattern.isActiveMaster 
-                                ? 'text-emerald-400' 
-                                : pattern.isQualified
-                                ? 'text-cyan-300'
-                                : 'text-slate-400'
-                            }`}>
-                              {pattern.name}
-                            </div>
-                          </td>
-                          <td className="py-3 px-4 text-center">
-                            <div className="flex flex-col items-center gap-1">
-                              <div className={`inline-flex items-center justify-center w-16 h-10 rounded-lg font-black text-lg ${
-                                pattern.isRecentlyDrawn
-                                  ? 'bg-red-500/30 border-2 border-red-500/50 text-red-400'
-                                  : 'bg-slate-800 text-white'
+                                ? 'bg-slate-900/30 hover:bg-slate-900/50'
+                                : 'hover:bg-slate-900/30'
+                            }`}
+                          >
+                            <td className="py-3 px-4">
+                              <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-black text-sm ${
+                                pattern.isActiveMaster 
+                                  ? 'bg-emerald-500 text-slate-950' 
+                                  : pattern.isQualified
+                                  ? 'bg-cyan-500/20 text-cyan-400'
+                                  : 'bg-slate-800 text-slate-500'
                               }`}>
-                                {pattern.prediction}
+                                {idx + 1}
                               </div>
-                              {pattern.isRecentlyDrawn && (
-                                <span className="text-[8px] font-black text-red-400 uppercase tracking-tighter animate-pulse">
-                                  ⚠️ ออกแล้ว!
-                                </span>
-                              )}
-                              {pattern.isRecentlyDrawn && (
-                                <div className="flex gap-1 mt-1">
-                                  <span className="text-[8px] text-slate-500">ทางเลือก:</span>
-                                  <span className="text-[9px] font-black text-cyan-400">{pattern.mirrorNumber}</span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <div className={`font-black text-sm ${
+                                pattern.isActiveMaster 
+                                  ? 'text-emerald-400' 
+                                  : pattern.isQualified
+                                  ? 'text-cyan-300'
+                                  : 'text-slate-400'
+                              }`}>
+                                {pattern.name}
+                              </div>
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <div className="flex flex-col items-center gap-1">
+                                <div className={`inline-flex items-center justify-center w-16 h-10 rounded-lg font-black text-lg ${
+                                  pattern.isRecentlyDrawn
+                                    ? 'bg-red-500/30 border-2 border-red-500/50 text-red-400'
+                                    : 'bg-slate-800 text-white'
+                                }`}>
+                                  {pattern.prediction}
+                                </div>
+                                {pattern.isRecentlyDrawn && (
+                                  <span className="text-[8px] font-black text-red-400 uppercase tracking-tighter animate-pulse">
+                                    ⚠️ ออกแล้ว!
+                                  </span>
+                                )}
+                                {pattern.isRecentlyDrawn && (
+                                  <div className="flex gap-1 mt-1">
+                                    <span className="text-[8px] text-slate-500">ทางเลือก:</span>
+                                    <span className="text-[9px] font-black text-cyan-400">{pattern.mirrorNumber}</span>
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              {pattern.isActiveMaster ? (
+                                <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-emerald-500/20 border border-emerald-500/30 animate-pulse">
+                                  <span className="text-2xl" title="Active Master">👑</span>
+                                </div>
+                              ) : pattern.isQualified ? (
+                                <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+                                  <span className="text-xl text-emerald-400 font-black" title="Qualified">✓</span>
+                                </div>
+                              ) : (
+                                <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-red-500/10 border border-red-500/20">
+                                  <span className="text-xl text-red-400 font-black" title="Unstable">✗</span>
                                 </div>
                               )}
-                            </div>
-                          </td>
-                          <td className="py-3 px-4 text-center">
-                            {pattern.isActiveMaster ? (
-                              <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-emerald-500/20 border border-emerald-500/30 animate-pulse">
-                                <span className="text-2xl" title="Active Master">👑</span>
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <div className={`text-sm font-black ${
+                                pattern.historicalAccuracy >= 10 ? 'text-emerald-400' : 
+                                pattern.historicalAccuracy >= 5 ? 'text-amber-400' : 'text-slate-400'
+                              }`}>
+                                {pattern.historicalAccuracy.toFixed(1)}%
                               </div>
-                            ) : pattern.isQualified ? (
-                              <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-emerald-500/10 border border-emerald-500/20">
-                                <span className="text-xl text-emerald-400 font-black" title="Qualified">✓</span>
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <div className={`text-sm font-black ${
+                                pattern.currentAccuracy >= 10 ? 'text-emerald-400' : 
+                                pattern.currentAccuracy >= 5 ? 'text-amber-400' : 'text-slate-400'
+                              }`}>
+                                {pattern.currentAccuracy.toFixed(1)}%
                               </div>
-                            ) : (
-                              <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-red-500/10 border border-red-500/20">
-                                <span className="text-xl text-red-400 font-black" title="Unstable">✗</span>
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <div className={`text-sm font-black ${
+                                pattern.maxConsecutive >= 6 ? 'text-emerald-400' : 
+                                pattern.maxConsecutive >= 4 ? 'text-amber-400' : 'text-red-400'
+                              }`}>
+                                {pattern.maxConsecutive} งวด
                               </div>
-                            )}
-                          </td>
-                          <td className="py-3 px-4 text-center">
-                            <div className={`text-sm font-black ${
-                              pattern.historicalAccuracy >= 10 ? 'text-emerald-400' : 
-                              pattern.historicalAccuracy >= 5 ? 'text-amber-400' : 'text-slate-400'
-                            }`}>
-                              {pattern.historicalAccuracy.toFixed(1)}%
-                            </div>
-                          </td>
-                          <td className="py-3 px-4 text-center">
-                            <div className={`text-sm font-black ${
-                              pattern.currentAccuracy >= 10 ? 'text-emerald-400' : 
-                              pattern.currentAccuracy >= 5 ? 'text-amber-400' : 'text-slate-400'
-                            }`}>
-                              {pattern.currentAccuracy.toFixed(1)}%
-                            </div>
-                          </td>
-                          <td className="py-3 px-4 text-center">
-                            <div className={`text-sm font-black ${
-                              pattern.maxConsecutive >= 6 ? 'text-emerald-400' : 
-                              pattern.maxConsecutive >= 4 ? 'text-amber-400' : 'text-red-400'
-                            }`}>
-                              {pattern.maxConsecutive} งวด
-                            </div>
-                          </td>
-                          <td className="py-3 px-4 text-center">
-                            <div className="flex items-center justify-center gap-2">
-                              <div className="w-16 h-2 bg-slate-800 rounded-full overflow-hidden">
-                                <div
-                                  className={`h-full transition-all duration-1000 ${
-                                    pattern.stabilityScore >= 70 ? 'bg-emerald-500' :
-                                    pattern.stabilityScore >= 50 ? 'bg-amber-500' :
-                                    'bg-red-500'
-                                  }`}
-                                  style={{ width: `${pattern.stabilityScore}%` }}
-                                ></div>
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <div className="flex items-center justify-center gap-2">
+                                <div className="w-16 h-2 bg-slate-800 rounded-full overflow-hidden">
+                                  <div
+                                    className={`h-full transition-all duration-1000 ${
+                                      pattern.stabilityScore >= 70 ? 'bg-emerald-500' :
+                                      pattern.stabilityScore >= 50 ? 'bg-amber-500' :
+                                      'bg-red-500'
+                                    }`}
+                                    style={{ width: `${pattern.stabilityScore}%` }}
+                                  ></div>
+                                </div>
+                                <span className="text-xs font-black text-slate-500">{pattern.stabilityScore}%</span>
                               </div>
-                              <span className="text-xs font-black text-slate-500">{pattern.stabilityScore}%</span>
-                            </div>
-                          </td>
-                          <td className="py-3 px-4 text-center">
-                            <button
-                              onClick={() => setExpandedPattern(expandedPattern === pattern.name ? null : pattern.name)}
-                              className="px-3 py-1 bg-purple-500/20 hover:bg-purple-500/30 text-purple-400 border border-purple-500/20 rounded text-[9px] font-black uppercase tracking-tighter transition-colors"
-                            >
-                              {expandedPattern === pattern.name ? '▲ ซ่อน' : '▼ ดู'}
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <button
+                                onClick={() => setExpandedPattern(expandedPattern === pattern.name ? null : pattern.name)}
+                                className="px-3 py-1 bg-purple-500/20 hover:bg-purple-500/30 text-purple-400 border border-purple-500/20 rounded text-[9px] font-black uppercase tracking-tighter transition-colors"
+                              >
+                                {expandedPattern === pattern.name ? '▲ ซ่อน' : '▼ ดู'}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
 
-              {/* รายละเอียดขยายของแต่ละสูตร */}
-              {expandedPattern && (
-                <div className="mt-6 p-6 bg-slate-900/50 rounded-2xl border border-purple-500/30">
-                  {(() => {
-                    const pattern = allPatternPredictions.find(p => p.name === expandedPattern);
-                    if (!pattern) return null;
+                  {/* รายละเอียดขยายของแต่ละสูตร */}
+                  {expandedPattern && (
+                    <div className="mt-6 p-6 bg-slate-900/50 rounded-2xl border border-purple-500/30">
+                      {(() => {
+                        const pattern = allPatternPredictions.find(p => p.name === expandedPattern);
+                        if (!pattern) return null;
 
-                    const hybridInfo = hybridPatterns.find(h => h.pattern.name === pattern.name);
-                    const backtestHits = hybridInfo?.historicalStats.hits || [];
+                        const hybridInfo = hybridPatterns.find(h => h.pattern.name === pattern.name);
+                        const backtestHits = hybridInfo?.historicalStats.hits || [];
 
-                    return (
-                      <div>
-                        <h4 className="text-lg font-black text-purple-400 mb-4">
-                          📊 รายละเอียด: {pattern.name}
-                        </h4>
+                        return (
+                          <div>
+                            <h4 className="text-lg font-black text-purple-400 mb-4">
+                              📊 รายละเอียด: {pattern.name}
+                            </h4>
 
-                        {/* คำเตือนถ้าเลขออกแล้ว */}
-                        {pattern.isRecentlyDrawn && (
-                          <div className="mb-6 p-4 bg-red-500/10 border-2 border-red-500/30 rounded-xl">
-                            <div className="flex items-center gap-3">
-                              <span className="text-3xl">⚠️</span>
-                              <div>
-                                <p className="text-sm font-black text-red-400">
-                                  เลข {pattern.prediction} ออกในงวดล่าสุดแล้ว!
-                                </p>
-                                <p className="text-xs text-slate-400 mt-1">
-                                  วันที่ออก: {pattern.lastDrawnDate} | ไม่แนะนำให้ใช้เลขนี้
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                          <div className={`p-4 rounded-xl ${
-                            pattern.isRecentlyDrawn 
-                              ? 'bg-red-500/10 border-2 border-red-500/30' 
-                              : 'bg-slate-800/50'
-                          }`}>
-                            <p className="text-[10px] font-black text-slate-500 uppercase mb-1">เลขทำนาย</p>
-                            <p className={`text-3xl font-black ${
-                              pattern.isRecentlyDrawn ? 'text-red-400' : 'text-white'
-                            }`}>
-                              {pattern.prediction}
-                            </p>
                             {pattern.isRecentlyDrawn && (
-                              <p className="text-[9px] font-black text-red-400 mt-2">⚠️ ออกแล้ว!</p>
+                              <div className="mb-6 p-4 bg-red-500/10 border-2 border-red-500/30 rounded-xl">
+                                <div className="flex items-center gap-3">
+                                  <span className="text-3xl">⚠️</span>
+                                  <div>
+                                    <p className="text-sm font-black text-red-400">
+                                      เลข {pattern.prediction} ออกในงวดล่าสุดแล้ว!
+                                    </p>
+                                    <p className="text-xs text-slate-400 mt-1">
+                                      วันที่ออก: {pattern.lastDrawnDate} | ไม่แนะนำให้ใช้เลขนี้
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
                             )}
-                          </div>
-                          <div className="p-4 bg-slate-800/50 rounded-xl">
-                            <p className="text-[10px] font-black text-slate-500 uppercase mb-1">เลขกระจก (ทางเลือก)</p>
-                            <p className="text-3xl font-black text-cyan-400">{pattern.mirrorNumber}</p>
-                            <p className="text-[9px] text-slate-500 mt-2">แนะนำถ้าเลขหลักออกแล้ว</p>
-                          </div>
-                          <div className="p-4 bg-slate-800/50 rounded-xl">
-                            <p className="text-[10px] font-black text-slate-500 uppercase mb-1">ความแม่นยำ (30 งวด)</p>
-                            <p className="text-3xl font-black text-emerald-400">{pattern.historicalAccuracy.toFixed(1)}%</p>
-                          </div>
-                          <div className="p-4 bg-slate-800/50 rounded-xl">
-                            <p className="text-[10px] font-black text-slate-500 uppercase mb-1">ความแม่นยำ (10 งวด)</p>
-                            <p className="text-3xl font-black text-cyan-400">{pattern.currentAccuracy.toFixed(1)}%</p>
-                          </div>
-                        </div>
 
-                        {/* Running Digits Alternatives */}
-                        {pattern.isRecentlyDrawn && (
-                          <div className="mb-6 p-4 bg-cyan-500/10 border border-cyan-500/30 rounded-xl">
-                            <h5 className="text-sm font-black text-cyan-400 uppercase mb-3">
-                              🔄 Running Digits - เลขทางเลือก (10 ตัว)
-                            </h5>
-                            <div className="grid grid-cols-10 gap-2">
-                              {pattern.runningDigits.map((digit, idx) => (
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                              <div className={`p-4 rounded-xl ${
+                                pattern.isRecentlyDrawn 
+                                  ? 'bg-red-500/10 border-2 border-red-500/30' 
+                                  : 'bg-slate-800/50'
+                              }`}>
+                                <p className="text-[10px] font-black text-slate-500 uppercase mb-1">เลขทำนาย</p>
+                                <p className={`text-3xl font-black ${
+                                  pattern.isRecentlyDrawn ? 'text-red-400' : 'text-white'
+                                }`}>
+                                  {pattern.prediction}
+                                </p>
+                                {pattern.isRecentlyDrawn && (
+                                  <p className="text-[9px] font-black text-red-400 mt-2">⚠️ ออกแล้ว!</p>
+                                )}
+                              </div>
+                              <div className="p-4 bg-slate-800/50 rounded-xl">
+                                <p className="text-[10px] font-black text-slate-500 uppercase mb-1">เลขกระจก (ทางเลือก)</p>
+                                <p className="text-3xl font-black text-cyan-400">{pattern.mirrorNumber}</p>
+                                <p className="text-[9px] text-slate-500 mt-2">แนะนำถ้าเลขหลักออกแล้ว</p>
+                              </div>
+                              <div className="p-4 bg-slate-800/50 rounded-xl">
+                                <p className="text-[10px] font-black text-slate-500 uppercase mb-1">ความแม่นยำ (30 งวด)</p>
+                                <p className="text-3xl font-black text-emerald-400">{pattern.historicalAccuracy.toFixed(1)}%</p>
+                              </div>
+                              <div className="p-4 bg-slate-800/50 rounded-xl">
+                                <p className="text-[10px] font-black text-slate-500 uppercase mb-1">ความแม่นยำ (10 งวด)</p>
+                                <p className="text-3xl font-black text-cyan-400">{pattern.currentAccuracy.toFixed(1)}%</p>
+                              </div>
+                            </div>
+
+                            {pattern.isRecentlyDrawn && (
+                              <div className="mb-6 p-4 bg-cyan-500/10 border border-cyan-500/30 rounded-xl">
+                                <h5 className="text-sm font-black text-cyan-400 uppercase mb-3">
+                                  🔄 Running Digits - เลขทางเลือก (10 ตัว)
+                                </h5>
+                                <div className="grid grid-cols-10 gap-2">
+                                  {pattern.runningDigits.map((digit, idx) => (
+                                    <div
+                                      key={idx}
+                                      className="p-2 bg-slate-800/50 rounded-lg text-center"
+                                    >
+                                      <span className="text-lg font-black text-white">{digit}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                                <p className="text-[9px] text-slate-500 mt-2">
+                                  ใช้หลักสิบหรือหลักหน่วยจากเลขที่ทำนาย ผสมกับ 0-9
+                                </p>
+                              </div>
+                            )}
+
+                            <h5 className="text-sm font-black text-slate-400 uppercase mb-3">📈 ผลย้อนหลัง 10 งวดล่าสุด</h5>
+                            <div className="grid grid-cols-5 md:grid-cols-10 gap-2">
+                              {backtestHits.slice(0, 10).map((hit, idx) => (
                                 <div
                                   key={idx}
-                                  className="p-2 bg-slate-800/50 rounded-lg text-center"
+                                  className={`p-3 rounded-xl text-center ${
+                                    hit.isDirect
+                                      ? 'bg-emerald-500/20 border border-emerald-500/30'
+                                      : hit.isRunning
+                                      ? 'bg-amber-500/20 border border-amber-500/30'
+                                      : 'bg-red-500/10 border border-red-500/20'
+                                  }`}
                                 >
-                                  <span className="text-lg font-black text-white">{digit}</span>
+                                  <p className="text-[9px] font-black text-slate-500 mb-1">{hit.date.slice(0, 5)}</p>
+                                  <p className="text-sm font-black text-white">{hit.predicted.toString().padStart(2, '0')}</p>
+                                  <p className="text-[9px] text-slate-500 mt-1">→ {hit.actual.toString().padStart(2, '0')}</p>
+                                  {hit.isDirect && (
+                                    <span className="text-[9px] font-black text-emerald-400">✓ ถูก</span>
+                                  )}
+                                  {hit.isRunning && !hit.isDirect && (
+                                    <span className="text-[9px] font-black text-amber-400">~ รันนิ่ง</span>
+                                  )}
+                                  {!hit.isDirect && !hit.isRunning && (
+                                    <span className="text-[9px] font-black text-red-400">✗ ผิด</span>
+                                  )}
                                 </div>
                               ))}
                             </div>
-                            <p className="text-[9px] text-slate-500 mt-2">
-                              ใช้หลักสิบหรือหลักหน่วยจากเลขที่ทำนาย ผสมกับ 0-9
-                            </p>
                           </div>
-                        )}
+                        );
+                      })()}
+                    </div>
+                  )}
 
-                        <h5 className="text-sm font-black text-slate-400 uppercase mb-3">📈 ผลย้อนหลัง 10 งวดล่าสุด</h5>
-                        <div className="grid grid-cols-5 md:grid-cols-10 gap-2">
-                          {backtestHits.slice(0, 10).map((hit, idx) => (
-                            <div
-                              key={idx}
-                              className={`p-3 rounded-xl text-center ${
-                                hit.isDirect
-                                  ? 'bg-emerald-500/20 border border-emerald-500/30'
-                                  : hit.isRunning
-                                  ? 'bg-amber-500/20 border border-amber-500/30'
-                                  : 'bg-red-500/10 border border-red-500/20'
-                              }`}
-                            >
-                              <p className="text-[9px] font-black text-slate-500 mb-1">{hit.date.slice(0, 5)}</p>
-                              <p className="text-sm font-black text-white">{hit.predicted.toString().padStart(2, '0')}</p>
-                              <p className="text-[9px] text-slate-500 mt-1">→ {hit.actual.toString().padStart(2, '0')}</p>
-                              {hit.isDirect && (
-                                <span className="text-[9px] font-black text-emerald-400">✓ ถูก</span>
-                              )}
-                              {hit.isRunning && !hit.isDirect && (
-                                <span className="text-[9px] font-black text-amber-400">~ รันนิ่ง</span>
-                              )}
-                              {!hit.isDirect && !hit.isRunning && (
-                                <span className="text-[9px] font-black text-red-400">✗ ผิด</span>
-                              )}
-                            </div>
-                          ))}
+                  {/* คำอธิบายสัญลักษณ์ */}
+                  <div className="mt-6 p-4 bg-slate-900/40 rounded-2xl border border-slate-800">
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-[10px]">
+                      <div className="flex items-start gap-2">
+                        <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-500/20 border border-emerald-500/30 animate-pulse flex-shrink-0">
+                          <span className="text-lg">👑</span>
+                        </div>
+                        <div>
+                          <p className="font-black text-slate-400 uppercase">Active Master</p>
+                          <p className="text-slate-600">สูตรหลักที่ทำนายงวดถัดไป</p>
                         </div>
                       </div>
-                    );
-                  })()}
-                </div>
-              )}
-
-              {/* คำอธิบายสัญลักษณ์ */}
-              <div className="mt-6 p-4 bg-slate-900/40 rounded-2xl border border-slate-800">
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-[10px]">
-                  <div className="flex items-start gap-2">
-                    <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-500/20 border border-emerald-500/30 animate-pulse flex-shrink-0">
-                      <span className="text-lg">👑</span>
-                    </div>
-                    <div>
-                      <p className="font-black text-slate-400 uppercase">Active Master</p>
-                      <p className="text-slate-600">สูตรหลักที่ทำนายงวดถัดไป</p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex-shrink-0">
-                      <span className="text-sm text-emerald-400 font-black">✓</span>
-                    </div>
-                    <div>
-                      <p className="font-black text-slate-400 uppercase">Qualified</p>
-                      <p className="text-slate-600">Max Streak ≥ 4 งวด</p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-500/10 border border-red-500/20 flex-shrink-0">
-                      <span className="text-sm text-red-400 font-black">✗</span>
-                    </div>
-                    <div>
-                      <p className="font-black text-slate-400 uppercase">Unstable</p>
-                      <p className="text-slate-600">Max Streak {'<'} 4 งวด</p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <div className="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-red-500/30 border-2 border-red-500/50 flex-shrink-0">
-                      <span className="text-sm font-black text-red-400">XX</span>
-                    </div>
-                    <div>
-                      <p className="font-black text-slate-400 uppercase">ออกแล้ว!</p>
-                      <p className="text-slate-600">เลขที่ทำนายตรงกับผลหวย</p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-purple-500/20 border border-purple-500/30 flex-shrink-0">
-                      <span className="text-sm text-purple-400 font-black">▼</span>
-                    </div>
-                    <div>
-                      <p className="font-black text-slate-400 uppercase">ดูรายละเอียด</p>
-                      <p className="text-slate-600">ผลย้อนหลัง + เลขทางเลือก</p>
+                      <div className="flex items-start gap-2">
+                        <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex-shrink-0">
+                          <span className="text-sm text-emerald-400 font-black">✓</span>
+                        </div>
+                        <div>
+                          <p className="font-black text-slate-400 uppercase">Qualified</p>
+                          <p className="text-slate-600">Max Streak ≥ 4 งวด</p>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-500/10 border border-red-500/20 flex-shrink-0">
+                          <span className="text-sm text-red-400 font-black">✗</span>
+                        </div>
+                        <div>
+                          <p className="font-black text-slate-400 uppercase">Unstable</p>
+                          <p className="text-slate-600">Max Streak {'<'} 4 งวด</p>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <div className="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-red-500/30 border-2 border-red-500/50 flex-shrink-0">
+                          <span className="text-sm font-black text-red-400">XX</span>
+                        </div>
+                        <div>
+                          <p className="font-black text-slate-400 uppercase">ออกแล้ว!</p>
+                          <p className="text-slate-600">เลขที่ทำนายตรงกับผลหวย</p>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-purple-500/20 border border-purple-500/30 flex-shrink-0">
+                          <span className="text-sm text-purple-400 font-black">▼</span>
+                        </div>
+                        <div>
+                          <p className="font-black text-slate-400 uppercase">ดูรายละเอียด</p>
+                          <p className="text-slate-600">ผลย้อนหลัง + เลขทางเลือก</p>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
-            </section>
+            </div>
           )}
 
           {/* Charts Section */}
