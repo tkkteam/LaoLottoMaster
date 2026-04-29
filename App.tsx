@@ -9,6 +9,9 @@ import {
   getDigitSum,
   getMirror,
   calculateBackyard,
+  backtestBackyard,
+  backtestBackyardWithConstants,
+  findBestBackyardConstants,
   backtestPattern,
   findBestPattern,
   calculateCombinedConfidence,
@@ -42,6 +45,9 @@ import {
   const [repeatAnalysis, setRepeatAnalysis] = useState<RepeatAnalysis | null>(null);
   const [showRunningLogs, setShowRunningLogs] = useState(false);
   const [showExplanation, setShowExplanation] = useState(false);
+  const [showBackyardLogs, setShowBackyardLogs] = useState(false);
+  const [backyardBacktest, setBackyardBacktest] = useState<import('./services/lottoService').BackyardBacktestResult | null>(null);
+  const [backyardConstants, setBackyardConstants] = useState<{ a: number; b: number; c: number }>({ a: 6, b: 7, c: 1 });
 
   // NEW: Running Digits 30-Draw Statistics
   const [runningDigitsStats, setRunningDigitsStats] = useState<{
@@ -126,11 +132,11 @@ import {
     return {
       topT, topU, chartData,
       parityData: [{ name: 'คู่', value: even }, { name: 'คี่', value: odd }],
-      backyard: calculateBackyard(lastResult.r3, lastResult.r4),
+      backyard: calculateBackyard(lastResult.r3, lastResult.r4, backyardConstants),
       aiMaster: aiMasterNum,
       runningDigits: runningDigits
     };
-  }, [allData, bestPatternInfo]);
+  }, [allData, bestPatternInfo, backyardConstants]);
 
   useEffect(() => {
     if (allData.length >= 2 && stats) {
@@ -142,6 +148,27 @@ import {
   useEffect(() => {
     if (allData.length >= 2) {
       calculateRunningDigitsStats(allData);
+    }
+  }, [allData]);
+
+  // Recalculate Backyard Backtest when data changes
+  useEffect(() => {
+    if (allData.length >= 2) {
+      // หา constant ที่ดีที่สุดจากข้อมูล 70% แรก (train set) - optimize สำหรับ running accuracy
+      const trainSize = Math.floor(allData.length * 0.7);
+      const trainData = allData.slice(allData.length - trainSize);
+      const best = findBestBackyardConstants(trainData, Math.min(100, trainData.length));
+      setBackyardConstants(best.constants);
+      console.log(`   🎯 Optimized Constants: a=${best.constants.a}, b=${best.constants.b}, c=${best.constants.c}`);
+      console.log(`   Train Running Accuracy: ${best.runningAccuracy.toFixed(1)}%`);
+
+      // ทดสอบกับข้อมูล 30% ล่าสุด (test set)
+      const bt = backtestBackyardWithConstants(allData, 30, best.constants);
+      setBackyardBacktest(bt);
+      console.log(`   🏡 Backyard Backtest (30 rounds):`);
+      console.log(`     Exact: ${bt.accuracy.toFixed(1)}% (${bt.hits}/${bt.totalRounds})`);
+      console.log(`     Running: ${bt.runningAccuracy.toFixed(1)}% (${bt.runningHits}/${bt.totalRounds})`);
+      console.log(`     Best Streak: ${bt.streak.best} | Running Best: ${bt.runningStreak.best}`);
     }
   }, [allData]);
 
@@ -269,7 +296,21 @@ import {
   };
 
   const autoCalculate = () => {
-    if (allData.length < 2 || !bestPatternInfo || !stats) {
+    console.log('\n🔍 RE-ANALYZE clicked');
+    console.log('   allData.length:', allData.length);
+    console.log('   bestPatternInfo:', bestPatternInfo?.pattern?.name ?? 'null');
+    console.log('   stats:', stats ? 'exists' : 'null');
+
+    if (allData.length < 2) {
+      console.warn('   ❌ Not enough data (need at least 2 results)');
+      return;
+    }
+    if (!bestPatternInfo) {
+      console.warn('   ❌ bestPatternInfo not set - run analysis first');
+      return;
+    }
+    if (!stats) {
+      console.warn('   ❌ stats not set - run analysis first');
       return;
     }
 
@@ -284,10 +325,17 @@ import {
     const activePattern = bestPatternInfo.pattern;
 
     // Predictions from ALL patterns for convergence check
-    const allPredictions = PATTERNS.map(p => ({
-      name: p.name,
-      value: p.calc(prevR2, lastR2, lastR4, allData).toString().padStart(2, '0')
-    }));
+    console.log('   🎲 Calculating predictions from', PATTERNS.length, 'patterns...');
+    const allPredictions = PATTERNS.map(p => {
+      try {
+        const value = p.calc(prevR2, lastR2, lastR4, allData).toString().padStart(2, '0');
+        console.log(`     ✅ ${p.name} → ${value}`);
+        return { name: p.name, value };
+      } catch (e) {
+        console.error(`     ❌ ${p.name} ERROR:`, e);
+        return { name: p.name, value: '00' };
+      }
+    });
 
     // ===== ENSEMBLE METHOD WITH ANTI-REPEAT =====
     // ผสมผลลัพธ์จากทุกสูตรแทนการเลือกสูตรเดียว
@@ -801,7 +849,32 @@ import {
 
           {/* Backyard Strategy */}
           <section className="glass-card !border-l-8 !border-l-indigo-600 !bg-indigo-600/5">
-            <h2 className="section-title text-indigo-400">Backyard Strategy (ชุดเสริม)</h2>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="section-title text-indigo-400">Backyard Strategy (ชุดเสริม)</h2>
+              <div className="flex items-center gap-3">
+                {backyardBacktest && (
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-indigo-500/10 rounded-full border border-indigo-500/30">
+                    <span className="text-[10px] font-black text-emerald-400 uppercase tracking-tighter">
+                      Running {backyardBacktest.runningAccuracy.toFixed(1)}% ({backyardBacktest.runningHits}/{backyardBacktest.totalRounds})
+                    </span>
+                    <span className="text-[10px] font-black text-slate-500">|</span>
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">
+                      Exact {backyardBacktest.accuracy.toFixed(1)}% ({backyardBacktest.hits}/{backyardBacktest.totalRounds})
+                    </span>
+                  </div>
+                )}
+                <button
+                  onClick={() => setShowBackyardLogs(!showBackyardLogs)}
+                  className={`px-3 py-1.5 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all ${
+                    showBackyardLogs
+                      ? 'bg-indigo-500 text-white border-indigo-400 shadow-lg shadow-indigo-500/30'
+                      : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30 hover:bg-indigo-500/20'
+                  }`}
+                >
+                  {showBackyardLogs ? '📊 HIDE LOG' : '📊 VIEW LOG'}
+                </button>
+              </div>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               {stats?.backyard.map((num, i) => (
                 <div key={i} className="bg-slate-950/60 p-4 rounded-2xl border border-indigo-500/10 text-center hover:border-indigo-500/30 transition-all group">
@@ -810,6 +883,69 @@ import {
                 </div>
               ))}
             </div>
+
+            {backyardBacktest && (
+              <div className="grid grid-cols-4 gap-3 mt-6">
+                <div className="bg-slate-950/40 p-4 rounded-2xl border border-emerald-500/20 text-center">
+                  <div className="text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-1">Running</div>
+                  <div className="text-xl font-black text-white">{backyardBacktest.runningAccuracy.toFixed(1)}%</div>
+                </div>
+                <div className="bg-slate-950/40 p-4 rounded-2xl border border-indigo-500/20 text-center">
+                  <div className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">Exact</div>
+                  <div className="text-xl font-black text-white">{backyardBacktest.accuracy.toFixed(1)}%</div>
+                </div>
+                <div className="bg-slate-950/40 p-4 rounded-2xl border border-amber-500/20 text-center">
+                  <div className="text-[10px] font-black text-amber-400 uppercase tracking-widest mb-1">🔥 Run Streak</div>
+                  <div className="text-xl font-black text-white">{backyardBacktest.runningStreak.best}</div>
+                </div>
+                <div className="bg-slate-950/40 p-4 rounded-2xl border border-cyan-500/20 text-center">
+                  <div className="text-[10px] font-black text-cyan-400 uppercase tracking-widest mb-1">🔥 Exact Streak</div>
+                  <div className="text-xl font-black text-white">{backyardBacktest.streak.best}</div>
+                </div>
+              </div>
+            )}
+
+            {showBackyardLogs && backyardBacktest && (
+              <div className="mt-6 bg-slate-950/60 rounded-2xl border border-indigo-500/20 overflow-hidden">
+                <div className="p-4 border-b border-indigo-500/10">
+                  <h3 className="text-sm font-black text-indigo-400 uppercase tracking-widest">Backyard History Log (30 งวดล่าสุด)</h3>
+                </div>
+                <div className="max-h-96 overflow-y-auto">
+                  <table className="w-full text-xs">
+                    <thead className="sticky top-0 bg-slate-950/90 border-b border-indigo-500/10">
+                      <tr>
+                        <th className="p-3 text-left text-[10px] font-black text-slate-500 uppercase tracking-widest">งวด</th>
+                        <th className="p-3 text-center text-[10px] font-black text-slate-500 uppercase tracking-widest">ที่ทำนาย</th>
+                        <th className="p-3 text-center text-[10px] font-black text-slate-500 uppercase tracking-widest">ผลออก</th>
+                        <th className="p-3 text-center text-[10px] font-black text-slate-500 uppercase tracking-widest">Running</th>
+                        <th className="p-3 text-center text-[10px] font-black text-slate-500 uppercase tracking-widest">Exact</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {backyardBacktest.hitDetails.map((detail, i) => (
+                        <tr key={i} className={`border-b border-slate-800/50 ${detail.isRunning ? 'bg-emerald-500/5' : 'bg-red-500/5'}`}>
+                          <td className="p-3 font-bold text-white">{detail.date}</td>
+                          <td className="p-3 text-center font-mono text-indigo-300">{detail.predicted.join(', ')}</td>
+                          <td className="p-3 text-center font-mono font-black text-white">{detail.actual}</td>
+                          <td className="p-3 text-center">
+                            {detail.isRunning
+                              ? <span className="text-emerald-400 font-black">✅ ตรง</span>
+                              : <span className="text-red-400 font-black">❌ ผิด</span>
+                            }
+                          </td>
+                          <td className="p-3 text-center">
+                            {detail.isHit
+                              ? <span className="text-amber-400 font-black">🎯 ถูก</span>
+                              : <span className="text-slate-500">-</span>
+                            }
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </section>
 
           {/* Engine */}

@@ -9,7 +9,8 @@ import {
   markovChainFormula,
   neuralPatternFormula,
   deepLearning4DFormula,
-  advancedClusterFormula
+  advancedClusterFormula,
+  quantumMaxPattern
 } from './formulas';
 
 const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQKbaNztX47-SnDvWbfYskTxHscwDCRYkEnVuKFmc-R8v7usDwWEjs-QaWk3cDm6yBGI7NImVNYaqFc/pub?gid=709667456&single=true&output=csv';
@@ -35,20 +36,142 @@ export function getMirror(num: string | number): string {
   return (MIRRORS[s[0]] || '0') + (MIRRORS[s[1]] || '0');
 }
 
-export function calculateBackyard(r3Str: string, r4Str: string): string[] {
+export function calculateBackyard(r3Str: string, r4Str: string, constants?: { a: number; b: number; c: number }): string[] {
   if (!r3Str || r3Str.length < 3) return [];
   const h = parseInt(r3Str[0], 10) || 0;
   const t = parseInt(r3Str[1], 10) || 0;
   const u = parseInt(r3Str[2], 10) || 0;
   const adaptive = getDigitSum(r4Str) || 9;
   
-  const t1 = (h + t + u + adaptive) % 10;
-  const t2 = (t1 + 6) % 10;
+  const a = constants?.a ?? 6;
+  const b = constants?.b ?? 7;
+  const c = constants?.c ?? 1;
   
-  const u1 = (u + 7) % 10;
-  const u2 = (u1 + 1) % 10;
+  const t1 = (h + t + u + adaptive) % 10;
+  const t2 = (t1 + a) % 10;
+  
+  const u1 = (u + b) % 10;
+  const u2 = (u1 + c) % 10;
   
   return [`${t1}${u1}`, `${t1}${u2}`, `${t2}${u1}`, `${t2}${u2}`];
+}
+
+export interface BackyardBacktestResult {
+  totalRounds: number;
+  hits: number;
+  accuracy: number;
+  runningHits: number;
+  runningAccuracy: number;
+  hitDetails: Array<{
+    date: string;
+    predicted: string[];
+    actual: string;
+    isHit: boolean;
+    isRunning: boolean;
+    hitNumber: string | null;
+  }>;
+  streak: { current: number; best: number };
+  runningStreak: { current: number; best: number };
+}
+
+export function backtestBackyardWithConstants(
+  results: LottoResult[],
+  rounds: number = 30,
+  constants: { a: number; b: number; c: number } = { a: 6, b: 7, c: 1 }
+): BackyardBacktestResult {
+  const hitDetails: BackyardBacktestResult['hitDetails'] = [];
+  let hits = 0;
+  let runningHits = 0;
+  let currentStreak = 0;
+  let bestStreak = 0;
+  let currentRunningStreak = 0;
+  let bestRunningStreak = 0;
+
+  for (let i = 1; i < results.length && hitDetails.length < rounds; i++) {
+    const prevResult = results[i];
+    const targetResult = results[i - 1];
+
+    const predicted = calculateBackyard(prevResult.r3, prevResult.r4, constants);
+    const actual = targetResult.r2.padStart(2, '0');
+    const isHit = predicted.includes(actual);
+    
+    const [aTens, aUnits] = [actual[0], actual[1]];
+    const isRunning = predicted.some(p => p[0] === aTens || p[1] === aUnits);
+    
+    const hitNumber = isHit ? actual : null;
+
+    if (isHit) {
+      hits++;
+      currentStreak++;
+      bestStreak = Math.max(bestStreak, currentStreak);
+    } else {
+      currentStreak = 0;
+    }
+
+    if (isRunning) {
+      runningHits++;
+      currentRunningStreak++;
+      bestRunningStreak = Math.max(bestRunningStreak, currentRunningStreak);
+    } else {
+      currentRunningStreak = 0;
+    }
+
+    hitDetails.push({
+      date: targetResult.date,
+      predicted,
+      actual,
+      isHit,
+      isRunning,
+      hitNumber
+    });
+  }
+
+  const totalRounds = hitDetails.length;
+  const accuracy = totalRounds > 0 ? (hits / totalRounds) * 100 : 0;
+  const runningAccuracy = totalRounds > 0 ? (runningHits / totalRounds) * 100 : 0;
+
+  return {
+    totalRounds,
+    hits,
+    accuracy,
+    runningHits,
+    runningAccuracy,
+    hitDetails,
+    streak: { current: currentStreak, best: bestStreak },
+    runningStreak: { current: currentRunningStreak, best: bestRunningStreak }
+  };
+}
+
+export function findBestBackyardConstants(
+  results: LottoResult[],
+  testRounds: number = 100
+): { constants: { a: number; b: number; c: number }; accuracy: number; runningAccuracy: number } {
+  let bestRunningAccuracy = 0;
+  let bestConstants = { a: 6, b: 7, c: 1 };
+
+  for (let a = 1; a <= 9; a++) {
+    for (let b = 1; b <= 9; b++) {
+      for (let c = 1; c <= 9; c++) {
+        const result = backtestBackyardWithConstants(results, testRounds, { a, b, c });
+        if (result.runningAccuracy > bestRunningAccuracy) {
+          bestRunningAccuracy = result.runningAccuracy;
+          bestConstants = { a, b, c };
+        }
+      }
+    }
+  }
+
+  const finalResult = backtestBackyardWithConstants(results, testRounds, bestConstants);
+
+  return { constants: bestConstants, accuracy: finalResult.accuracy, runningAccuracy: finalResult.runningAccuracy };
+}
+
+export function backtestBackyard(
+  results: LottoResult[],
+  rounds: number = 30
+): BackyardBacktestResult {
+  const best = findBestBackyardConstants(results, Math.min(100, results.length));
+  return backtestBackyardWithConstants(results, rounds, best.constants);
 }
 
 /**
@@ -251,7 +374,8 @@ export const PATTERNS: Pattern[] = [
   markovChainFormula,
   neuralPatternFormula,
   deepLearning4DFormula,
-  advancedClusterFormula
+  advancedClusterFormula,
+  quantumMaxPattern
 ];
 
 export const MASTER_PATTERN = PATTERNS[0];
@@ -266,7 +390,8 @@ export {
   markovChainFormula,
   neuralPatternFormula,
   deepLearning4DFormula,
-  advancedClusterFormula
+  advancedClusterFormula,
+  quantumMaxPattern
 };
 
 export { MIRRORS };

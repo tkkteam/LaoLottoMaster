@@ -7,3 +7,4 @@ export { markovChainFormula } from './markovChain';
 export { neuralPatternFormula } from './neuralPattern';
 export { deepLearning4DFormula } from './deepLearning4D';
 export { advancedClusterFormula } from './advancedCluster';
+export { quantumMaxPattern } from './quantumMax';
