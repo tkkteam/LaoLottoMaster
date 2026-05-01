@@ -1,15 +1,16 @@
 
 import { LottoResult, Pattern } from '../types';
 import {
-  ngramPattern,
   hotNumbersFormula,
   master2DigitFormula,
   quantumFluxFormula,
-  staticCoreFormula,
   markovChainFormula,
   neuralPatternFormula,
   deepLearning4DFormula,
+  quantumAnalysisFormula,
   advancedClusterFormula,
+  ngramPattern,
+  staticCoreFormula,
   quantumMaxPattern
 } from './formulas';
 
@@ -366,15 +367,16 @@ export const fetchLottoData = async (): Promise<LottoResult[]> => {
  */
 
 export const PATTERNS: Pattern[] = [
-  ngramPattern,
   hotNumbersFormula,
   master2DigitFormula,
   quantumFluxFormula,
-  staticCoreFormula,
   markovChainFormula,
   neuralPatternFormula,
   deepLearning4DFormula,
+  quantumAnalysisFormula,
   advancedClusterFormula,
+  ngramPattern,
+  staticCoreFormula,
   quantumMaxPattern
 ];
 
@@ -390,6 +392,7 @@ export {
   markovChainFormula,
   neuralPatternFormula,
   deepLearning4DFormula,
+  quantumAnalysisFormula,
   advancedClusterFormula,
   quantumMaxPattern
 };

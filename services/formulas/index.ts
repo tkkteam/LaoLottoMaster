@@ -1,10 +1,11 @@
-export { ngramPattern } from './ngram';
 export { hotNumbersFormula } from './hotNumbers';
 export { master2DigitFormula } from './master2Digit';
 export { quantumFluxFormula } from './quantumFlux';
-export { staticCoreFormula } from './staticCore';
 export { markovChainFormula } from './markovChain';
 export { neuralPatternFormula } from './neuralPattern';
 export { deepLearning4DFormula } from './deepLearning4D';
+export { quantumAnalysisFormula } from './quantumAnalysis';
 export { advancedClusterFormula } from './advancedCluster';
+export { ngramPattern } from './ngram';
+export { staticCoreFormula } from './staticCore';
 export { quantumMaxPattern } from './quantumMax';

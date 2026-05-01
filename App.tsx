@@ -139,10 +139,10 @@ import {
   }, [allData, bestPatternInfo, backyardConstants]);
 
   useEffect(() => {
-    if (allData.length >= 2 && stats) {
+    if (allData.length >= 2 && stats && hybridPatterns.length > 0) {
       autoCalculate();
     }
-  }, [allData, bestPatternInfo, stats]);
+  }, [allData, bestPatternInfo, stats, hybridPatterns]);
 
   // Recalculate Running Digits stats when data changes
   useEffect(() => {
@@ -296,100 +296,102 @@ import {
   };
 
   const autoCalculate = () => {
-    console.log('\n🔍 RE-ANALYZE clicked');
-    console.log('   allData.length:', allData.length);
-    console.log('   bestPatternInfo:', bestPatternInfo?.pattern?.name ?? 'null');
-    console.log('   stats:', stats ? 'exists' : 'null');
-
-    if (allData.length < 2) {
-      console.warn('   ❌ Not enough data (need at least 2 results)');
+    console.log('\n🔍 RE-ANALYZE clicked (V4 Adaptive Learning)');
+    
+    if (allData.length < 5) {
+      console.warn('   ❌ Not enough data for learning');
       return;
     }
-    if (!bestPatternInfo) {
-      console.warn('   ❌ bestPatternInfo not set - run analysis first');
-      return;
-    }
-    if (!stats) {
-      console.warn('   ❌ stats not set - run analysis first');
+    if (!bestPatternInfo || !stats) {
+      console.warn('   ❌ Stats not ready');
       return;
     }
 
     const lastResult = allData[0];
     const prevResult = allData[1];
-
     const prevR2 = parseInt(prevResult.r2, 10);
     const lastR2 = parseInt(lastResult.r2, 10);
-    const lastR3 = lastResult.r3;
     const lastR4 = lastResult.r4;
+    const lastR3 = lastResult.r3;
 
     const activePattern = bestPatternInfo.pattern;
 
-    // Predictions from ALL patterns for convergence check
-    console.log('   🎲 Calculating predictions from', PATTERNS.length, 'patterns...');
+    // 1. Gap Analysis
+    const numberGaps: Record<string, number> = {};
+    for (let i = 0; i <= 99; i++) {
+      const s = i.toString().padStart(2, '0');
+      const gap = allData.findIndex(r => r.r2 === s);
+      numberGaps[s] = gap === -1 ? 100 : gap;
+    }
+
+    // 2. PATTERN DISCOVERY (Self-Correction / Learning)
+    console.log('   🧠 Learning from recent 5 draws...');
+    const ruleBiases: Record<string, number> = {};
+    
+    PATTERNS.forEach(p => {
+      let hitCount = 0;
+      for (let i = 0; i < 5; i++) {
+        const actual = allData[i].r2;
+        const p_prevR2 = parseInt(allData[i+2]?.r2 || "0", 10);
+        const p_lastR2 = parseInt(allData[i+1]?.r2 || "0", 10);
+        const p_lastR4 = allData[i+1]?.r4 || "0000";
+        const pred = p.calc(p_prevR2, p_lastR2, p_lastR4, allData.slice(i+1)).toString().padStart(2, '0');
+        
+        if (pred === actual) hitCount++;
+        else if (getMirror(pred) === actual) hitCount += 0.5;
+      }
+      ruleBiases[p.name] = 1 + (hitCount * 0.5);
+    });
+
+    // 3. Calculating predictions
     const allPredictions = PATTERNS.map(p => {
       try {
         const value = p.calc(prevR2, lastR2, lastR4, allData).toString().padStart(2, '0');
-        console.log(`     ✅ ${p.name} → ${value}`);
         return { name: p.name, value };
       } catch (e) {
-        console.error(`     ❌ ${p.name} ERROR:`, e);
         return { name: p.name, value: '00' };
       }
     });
 
-    // ===== ENSEMBLE METHOD WITH ANTI-REPEAT =====
-    // ผสมผลลัพธ์จากทุกสูตรแทนการเลือกสูตรเดียว
+    // 4. ENSEMBLE SCORING V4 (Deterministic)
     const lastR2Str = lastResult.r2.padStart(2, '0');
-    const prevR2Str = prevResult.r2.padStart(2, '0');
-    const isRepeatDetected = lastR2Str === prevR2Str;
+    const isRepeatDetected = lastR2Str === prevResult.r2.padStart(2, '0');
     
-    // นับคะแนนของแต่ละเลข (ถ่วงน้ำหนักตามความแม่นยำของสูตร)
     const numberScores: Record<string, number> = {};
-    const numberVotes: Record<string, number> = {};
     
     allPredictions.forEach(pred => {
       const hybridInfo = hybridPatterns.find(h => h.pattern.name === pred.name);
+      
       const accuracy = hybridInfo?.currentStats.directAccuracy || 0;
-      const weight = Math.max(1, accuracy / 5); // น้ำหนักขั้นต่ำ 1, สูงสุด 20
+      const stability = hybridInfo?.stabilityScore || 0;
+      const historical = hybridInfo?.historicalStats.directAccuracy || 0;
+      const learningBonus = ruleBiases[pred.name] || 1.0;
       
-      // ===== ANTI-REPEAT LOGIC =====
-      // ถ้าตรวจพบ Repeat และเลขนี้คือเลขที่ออกซ้ำ ให้ลดคะแนนลง 90%
-      let finalWeight = weight;
-      if (isRepeatDetected && pred.value === lastR2Str) {
-        finalWeight = weight * 0.1; // ลดคะแนนลง 90%
-      }
+      let weight = (accuracy * 0.5) + (stability * 0.3) + (historical * 0.2);
+      weight = (weight / 2) * learningBonus;
+
+      const gap = numberGaps[pred.value] || 0;
+      if (gap > 20) weight *= 1.3;
+      if (gap < 3 && gap > 0) weight *= 0.5;
+
+      if (isRepeatDetected && pred.value === lastR2Str) weight *= 0.05;
       
-      numberScores[pred.value] = (numberScores[pred.value] || 0) + finalWeight;
-      numberVotes[pred.value] = (numberVotes[pred.value] || 0) + 1;
+      numberScores[pred.value] = (numberScores[pred.value] || 0) + weight;
     });
     
-    // เรียงตามคะแนน
     const sortedNumbers = Object.entries(numberScores)
       .sort((a, b) => b[1] - a[1]);
     
-    // เลือกเลขที่ได้คะแนนสูงสุด
-    let resPri = sortedNumbers[0]?.[0] || allPredictions[0].value;
+    const resPri = sortedNumbers[0]?.[0] || allPredictions[0].value;
     
-    // ===== SECONDARY ANTI-REPEAT =====
-    // ถ้าเลขที่ได้ยังคงเป็นเลขที่ออกซ้ำ และคะแนนไม่แตกต่างจากอันดับ 2 มาก
-    // ให้เลือกอันดับ 2 แทน
-    if (isRepeatDetected && resPri === lastR2Str && sortedNumbers.length >= 2) {
-      const topScore = sortedNumbers[0][1];
-      const secondScore = sortedNumbers[1][1];
-      const scoreDiff = topScore - secondScore;
-      
-      // ถ้าคะแนนแตกต่างน้อยกว่า 50% ให้เลือกอันดับ 2
-      if (scoreDiff < topScore * 0.5) {
-        resPri = sortedNumbers[1][0];
-      }
-    }
+    console.log(`\n✅ SOLID BEST SELECTION (Ensemble V4): ${resPri}`);
     
     const resNum = parseInt(resPri, 10);
 
     const hLast = parseInt(lastR3[0], 10) || 0;
     const hPrev = parseInt(prevResult?.r3[0] || "0", 10);
     const dSum = getDigitSum(lastR4);
-    const predictedH = ( (hLast * 2) + hPrev + dSum + 3 ) % 10;
+    const predictedH = ( (hLast * 2) + hPrev + dSum + 4 ) % 10;
 
     const mirrorPair = activePattern.getMirrorPair?.(resNum);
     const mirrorStr = mirrorPair?.toString().padStart(2, '0') || getMirror(resPri);
@@ -401,26 +403,17 @@ import {
       stats.topU
     );
 
-    // บันทึกเลขทำนายของทุกสูตรสำหรับ Algorithm Leaderboard
     const latestResult = allData[0];
     const latestR2 = latestResult.r2.padStart(2, '0');
     const latestDrawnDate = latestResult.date;
-
-    // ดึงเลขที่ออกใน 5 งวดล่าสุดเพื่อตรวจสอบ
     const recentDrawnNumbers = allData.slice(0, 5).map(r => r.r2.padStart(2, '0'));
 
     const patternPredictions = allPredictions.map(pred => {
       const hybridInfo = hybridPatterns.find(h => h.pattern.name === pred.name);
       const predictionNum = pred.value.padStart(2, '0');
-
-      // ตรวจสอบว่าเลขที่ทำนายออกในงวดล่าสุดหรือไม่
       const isRecentlyDrawn = predictionNum === latestR2;
       const wasDrawnRecently = recentDrawnNumbers.includes(predictionNum);
-
-      // คำนวณเลขกระจก
       const mirrorNumber = getMirror(predictionNum);
-
-      // คำนวณ running digits
       const tens = predictionNum[0];
       const units = predictionNum[1];
       const runningDigits = [
@@ -445,6 +438,7 @@ import {
         runningDigits: runningDigits
       };
     });
+
     setAllPatternPredictions(patternPredictions);
 
     setManualRes({
@@ -849,29 +843,29 @@ import {
 
           {/* Backyard Strategy */}
           <section className="glass-card !border-l-8 !border-l-indigo-600 !bg-indigo-600/5">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="section-title text-indigo-400">Backyard Strategy (ชุดเสริม)</h2>
-              <div className="flex items-center gap-3">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-6">
+              <h2 className="section-title text-indigo-400 !mb-0">Backyard Strategy (ชุดเสริม)</h2>
+              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                 {backyardBacktest && (
-                  <div className="flex items-center gap-2 px-3 py-1.5 bg-indigo-500/10 rounded-full border border-indigo-500/30">
-                    <span className="text-[10px] font-black text-emerald-400 uppercase tracking-tighter">
+                  <div className="flex flex-wrap items-center gap-1.5 px-2.5 py-1.5 bg-indigo-500/10 rounded-full border border-indigo-500/30">
+                    <span className="text-[9px] sm:text-[10px] font-black text-emerald-400 uppercase tracking-tighter">
                       Running {backyardBacktest.runningAccuracy.toFixed(1)}% ({backyardBacktest.runningHits}/{backyardBacktest.totalRounds})
                     </span>
-                    <span className="text-[10px] font-black text-slate-500">|</span>
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">
+                    <span className="text-[9px] sm:text-[10px] font-black text-slate-500">|</span>
+                    <span className="text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-tighter">
                       Exact {backyardBacktest.accuracy.toFixed(1)}% ({backyardBacktest.hits}/{backyardBacktest.totalRounds})
                     </span>
                   </div>
                 )}
                 <button
                   onClick={() => setShowBackyardLogs(!showBackyardLogs)}
-                  className={`px-3 py-1.5 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all ${
+                  className={`px-2.5 py-1.5 rounded-xl border text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${
                     showBackyardLogs
                       ? 'bg-indigo-500 text-white border-indigo-400 shadow-lg shadow-indigo-500/30'
                       : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30 hover:bg-indigo-500/20'
                   }`}
                 >
-                  {showBackyardLogs ? '📊 HIDE LOG' : '📊 VIEW LOG'}
+                  {showBackyardLogs ? ' HIDE LOG' : '📊 VIEW LOG'}
                 </button>
               </div>
             </div>
@@ -885,22 +879,22 @@ import {
             </div>
 
             {backyardBacktest && (
-              <div className="grid grid-cols-4 gap-3 mt-6">
-                <div className="bg-slate-950/40 p-4 rounded-2xl border border-emerald-500/20 text-center">
-                  <div className="text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-1">Running</div>
-                  <div className="text-xl font-black text-white">{backyardBacktest.runningAccuracy.toFixed(1)}%</div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mt-6">
+                <div className="bg-slate-950/40 p-3 sm:p-4 rounded-2xl border border-emerald-500/20 text-center">
+                  <div className="text-[8px] sm:text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-1">Running</div>
+                  <div className="text-lg sm:text-xl font-black text-white">{backyardBacktest.runningAccuracy.toFixed(1)}%</div>
                 </div>
-                <div className="bg-slate-950/40 p-4 rounded-2xl border border-indigo-500/20 text-center">
-                  <div className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">Exact</div>
-                  <div className="text-xl font-black text-white">{backyardBacktest.accuracy.toFixed(1)}%</div>
+                <div className="bg-slate-950/40 p-3 sm:p-4 rounded-2xl border border-indigo-500/20 text-center">
+                  <div className="text-[8px] sm:text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">Exact</div>
+                  <div className="text-lg sm:text-xl font-black text-white">{backyardBacktest.accuracy.toFixed(1)}%</div>
                 </div>
-                <div className="bg-slate-950/40 p-4 rounded-2xl border border-amber-500/20 text-center">
-                  <div className="text-[10px] font-black text-amber-400 uppercase tracking-widest mb-1">🔥 Run Streak</div>
-                  <div className="text-xl font-black text-white">{backyardBacktest.runningStreak.best}</div>
+                <div className="bg-slate-950/40 p-3 sm:p-4 rounded-2xl border border-amber-500/20 text-center">
+                  <div className="text-[8px] sm:text-[10px] font-black text-amber-400 uppercase tracking-widest mb-1">🔥 Run Streak</div>
+                  <div className="text-lg sm:text-xl font-black text-white">{backyardBacktest.runningStreak.best}</div>
                 </div>
-                <div className="bg-slate-950/40 p-4 rounded-2xl border border-cyan-500/20 text-center">
-                  <div className="text-[10px] font-black text-cyan-400 uppercase tracking-widest mb-1">🔥 Exact Streak</div>
-                  <div className="text-xl font-black text-white">{backyardBacktest.streak.best}</div>
+                <div className="bg-slate-950/40 p-3 sm:p-4 rounded-2xl border border-cyan-500/20 text-center">
+                  <div className="text-[8px] sm:text-[10px] font-black text-cyan-400 uppercase tracking-widest mb-1">🔥 Exact Streak</div>
+                  <div className="text-lg sm:text-xl font-black text-white">{backyardBacktest.streak.best}</div>
                 </div>
               </div>
             )}
@@ -1008,15 +1002,15 @@ import {
 
           {/* Leaderboard Section - HYBRID APPROACH */}
           <section className="glass-card">
-            <div className="flex justify-between items-center mb-8">
-              <div>
-                <h3 className="text-xl font-black text-white tracking-tight">Algorithm Leaderboard</h3>
-                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">การจัดอันดับประสิทธิภาพ AI ENGINE แบบ Hybrid</p>
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 sm:mb-8">
+              <div className="w-full sm:w-auto">
+                <h3 className="text-lg sm:text-xl font-black text-white tracking-tight">Algorithm Leaderboard</h3>
+                <p className="text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">การจัดอันดับประสิทธิภาพ AI ENGINE แบบ Hybrid</p>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                 <button
                   onClick={() => setShowExplanation(!showExplanation)}
-                  className={`px-3 py-1.5 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all ${
+                  className={`px-2.5 py-1.5 rounded-xl border text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${
                     showExplanation
                       ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-lg shadow-amber-500/30'
                       : 'bg-amber-500/10 text-amber-400 border-amber-500/30 hover:bg-amber-500/20'
@@ -1024,22 +1018,22 @@ import {
                 >
                   {showExplanation ? '📖 HIDE GUIDE' : '📖 VIEW GUIDE'}
                 </button>
-                <div className="flex items-center gap-2 px-3 py-2 bg-emerald-500/10 rounded-full border border-emerald-500/30">
+                <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-500/10 rounded-full border border-emerald-500/30">
                   <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
-                  <span className="text-[10px] font-black text-emerald-400 uppercase tracking-tighter">
+                  <span className="text-[9px] sm:text-[10px] font-black text-emerald-400 uppercase tracking-tighter">
                     {hybridPatterns.filter(h => h.isQualified).length} Qualified
                   </span>
                 </div>
-                <div className="flex items-center gap-2 px-3 py-2 bg-amber-500/10 rounded-full border border-amber-500/30">
+                <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-amber-500/10 rounded-full border border-amber-500/30">
                   <span className="w-1.5 h-1.5 bg-amber-500 rounded-full"></span>
-                  <span className="text-[10px] font-black text-amber-400 uppercase tracking-tighter">
+                  <span className="text-[9px] sm:text-[10px] font-black text-amber-400 uppercase tracking-tighter">
                     Hybrid Mode
                   </span>
                 </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-4">
+            <div className="grid grid-cols-1 gap-3 sm:gap-4">
               {hybridPatterns.map((h, idx) => {
                 const isBest = h.isActiveMaster;
                 const isQualified = h.isQualified;
@@ -1052,7 +1046,7 @@ import {
                 return (
                   <div
                     key={h.pattern.name}
-                    className={`group relative flex flex-col md:flex-row items-center justify-between p-5 rounded-[1.5rem] border transition-all duration-500 ${
+                    className={`group relative flex flex-col xl:flex-row items-start xl:items-center justify-between p-4 sm:p-5 rounded-[1.5rem] border transition-all duration-500 ${
                       isBest
                         ? 'bg-gradient-to-r from-emerald-500/15 via-emerald-500/5 to-transparent border-emerald-500/40 shadow-xl shadow-emerald-500/10'
                         : isQualified
@@ -1060,8 +1054,8 @@ import {
                         : 'bg-slate-900/40 border-slate-800/60 hover:border-slate-700 hover:bg-slate-900/60'
                     }`}
                   >
-                    <div className="flex items-center gap-6 mb-4 md:mb-0 w-full md:w-auto">
-                      <div className={`relative flex items-center justify-center w-12 h-12 rounded-2xl font-black text-xl transition-transform group-hover:scale-110 ${
+                    <div className="flex items-center gap-3 sm:gap-4 xl:gap-6 mb-3 xl:mb-0 w-full xl:w-auto">
+                      <div className={`relative flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 rounded-2xl font-black text-lg sm:text-xl transition-transform group-hover:scale-110 flex-shrink-0 ${
                         isBest ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/30' : 
                         isQualified ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30' :
                         'bg-slate-800 text-slate-500'
@@ -1069,59 +1063,59 @@ import {
                         {idx + 1}
                       </div>
 
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3">
-                          <h4 className={`text-lg font-black tracking-tight ${isBest ? 'text-white' : isQualified ? 'text-cyan-300' : 'text-slate-300'}`}>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 sm:gap-3">
+                          <h4 className={`text-sm sm:text-base xl:text-lg font-black tracking-tight ${isBest ? 'text-white' : isQualified ? 'text-cyan-300' : 'text-slate-300'}`}>
                             {h.pattern.name}
                           </h4>
-                          <div className="flex gap-2">
+                          <div className="flex gap-1.5 sm:gap-2 flex-shrink-0">
                             {isBest && (
-                              <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-500/20 border border-emerald-500/30 animate-pulse" title="Active Master">
-                                <span className="text-lg">👑</span>
+                              <div className="inline-flex items-center justify-center w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-emerald-500/20 border border-emerald-500/30 animate-pulse" title="Active Master">
+                                <span className="text-sm sm:text-lg">👑</span>
                               </div>
                             )}
                             {isQualified && !isBest && (
-                              <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-500/10 border border-emerald-500/20" title="Qualified">
-                                <span className="text-sm text-emerald-400 font-black">✓</span>
+                              <div className="inline-flex items-center justify-center w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-emerald-500/10 border border-emerald-500/20" title="Qualified">
+                                <span className="text-xs sm:text-sm text-emerald-400 font-black">✓</span>
                               </div>
                             )}
                             {!isQualified && (
-                              <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-500/10 border border-red-500/20" title="Unstable">
-                                <span className="text-sm text-red-400 font-black">✗</span>
+                              <div className="inline-flex items-center justify-center w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-red-500/10 border border-red-500/20" title="Unstable">
+                                <span className="text-xs sm:text-sm text-red-400 font-black"></span>
                               </div>
                             )}
                           </div>
                         </div>
                         
                         {/* HYBRID INFO */}
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-2">
-                          <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">
+                        <div className="flex flex-wrap items-center gap-x-2 sm:gap-x-3 xl:gap-x-4 gap-y-1 sm:gap-y-1.5 xl:gap-y-2 mt-1 sm:mt-1.5 xl:mt-2">
+                          <span className="text-[7px] sm:text-[8px] xl:text-[10px] font-black text-slate-500 uppercase tracking-widest">
                             Stability: <span className={stability >= 70 ? 'text-emerald-400' : stability >= 50 ? 'text-amber-400' : 'text-red-400'}>{stability}%</span>
                           </span>
-                          <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">
-                            Max Consecutive: <span className={maxConsecutive >= 6 ? 'text-emerald-400' : 'text-red-400'}>{maxConsecutive} งวด</span>
+                          <span className="text-[7px] sm:text-[8px] xl:text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                            Max Streak: <span className={maxConsecutive >= 6 ? 'text-emerald-400' : 'text-red-400'}>{maxConsecutive} งวด</span>
                           </span>
-                          <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">
+                          <span className="text-[7px] sm:text-[8px] xl:text-[10px] font-black text-slate-500 uppercase tracking-widest">
                             Current: <span className={currentConsecutive >= 6 ? 'text-emerald-400' : currentConsecutive >= 4 ? 'text-amber-400' : 'text-red-400'}>{currentConsecutive} งวด</span>
                           </span>
                         </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between w-full md:w-auto gap-6 border-t border-slate-800 md:border-t-0 pt-4 md:pt-0">
-                      <div className="flex gap-6">
+                    <div className="flex items-center justify-between w-full xl:w-auto gap-3 sm:gap-4 xl:gap-6 border-t border-slate-800 xl:border-t-0 pt-3 xl:pt-0 mt-3 xl:mt-0">
+                      <div className="flex gap-3 sm:gap-4 xl:gap-6">
                         {/* Historical Accuracy */}
-                        <div className="text-center md:text-right">
-                          <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Historical (30)</p>
-                          <div className={`text-xl font-black ${isBest ? 'text-emerald-400' : isQualified ? 'text-cyan-400' : 'text-white'}`}>
+                        <div className="text-center">
+                          <p className="text-[7px] sm:text-[8px] font-black text-slate-500 uppercase tracking-widest mb-0.5 sm:mb-1">Historical (30)</p>
+                          <div className={`text-base sm:text-lg xl:text-xl font-black ${isBest ? 'text-emerald-400' : isQualified ? 'text-cyan-400' : 'text-white'}`}>
                             {historicalAccuracy.toFixed(1)}<span className="text-xs ml-0.5 opacity-50">%</span>
                           </div>
                         </div>
                         
                         {/* Current Accuracy */}
-                        <div className="text-center md:text-right">
-                          <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Current (10)</p>
-                          <div className={`text-xl font-black ${
+                        <div className="text-center">
+                          <p className="text-[7px] sm:text-[8px] font-black text-slate-500 uppercase tracking-widest mb-0.5 sm:mb-1">Current (10)</p>
+                          <div className={`text-base sm:text-lg xl:text-xl font-black ${
                             currentAccuracy >= historicalAccuracy ? 'text-emerald-400' : 'text-amber-400'
                           }`}>
                             {currentAccuracy.toFixed(1)}<span className="text-xs ml-0.5 opacity-50">%</span>
@@ -1131,17 +1125,17 @@ import {
                         {/* Trending Indicator */}
                         <div className="flex items-center">
                           {currentAccuracy >= historicalAccuracy + 5 ? (
-                            <span className="text-2xl text-emerald-400" title="Trending Up">📈</span>
+                            <span className="text-lg sm:text-xl xl:text-2xl text-emerald-400" title="Trending Up">📈</span>
                           ) : currentAccuracy <= historicalAccuracy - 5 ? (
-                            <span className="text-2xl text-red-400" title="Trending Down">📉</span>
+                            <span className="text-lg sm:text-xl xl:text-2xl text-red-400" title="Trending Down">📉</span>
                           ) : (
-                            <span className="text-2xl text-amber-400" title="Stable">➡️</span>
+                            <span className="text-lg sm:text-xl xl:text-2xl text-amber-400" title="Stable">️</span>
                           )}
                         </div>
                       </div>
 
-                      {/* Stability Bar */}
-                      <div className="hidden lg:block w-32 ml-4">
+                      {/* Stability Bar - Show on larger screens */}
+                      <div className="hidden xl:block w-24 xl:w-32 ml-2 xl:ml-4">
                         <div className="flex justify-between text-[8px] font-black text-slate-600 uppercase mb-2">
                           <span>Stability</span>
                           <span>{stability}%</span>
