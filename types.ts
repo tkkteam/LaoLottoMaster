@@ -18,9 +18,10 @@ export interface PredictionResult {
 
 export interface Pattern {
   name: string;
-  calc: (p: number, l: number, l4?: string, results?: LottoResult[]) => number;
+  calc: (p: number, l: number, l4: string, results?: LottoResult[]) => number;
   getMirrorPair?: (result: number) => number;
-}
+  getTriple?: (results: LottoResult[]) => string;
+  }
 
 export interface BacktestResult {
   totalRounds: number;

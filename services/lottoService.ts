@@ -11,7 +11,18 @@ import {
   advancedClusterFormula,
   ngramPattern,
   staticCoreFormula,
-  quantumMaxPattern
+  quantumMaxPattern,
+  bayesianProbabilityFormula,
+  entropyAnalysisFormula,
+  fourierCycleFormula,
+  regressionTrendFormula,
+  patternMemoryFormula,
+  smartFusionFormula,
+  crossCorrelationFormula,
+  adaptiveWeightFormula,
+  digitPairFrequencyFormula,
+  monteCarlo3DFormula,
+  unifiedQuantumEngine
 } from './formulas';
 
 const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQKbaNztX47-SnDvWbfYskTxHscwDCRYkEnVuKFmc-R8v7usDwWEjs-QaWk3cDm6yBGI7NImVNYaqFc/pub?gid=709667456&single=true&output=csv';
@@ -377,10 +388,21 @@ export const PATTERNS: Pattern[] = [
   advancedClusterFormula,
   ngramPattern,
   staticCoreFormula,
-  quantumMaxPattern
+  quantumMaxPattern,
+  bayesianProbabilityFormula,
+  entropyAnalysisFormula,
+  fourierCycleFormula,
+  regressionTrendFormula,
+  patternMemoryFormula,
+  smartFusionFormula,
+  crossCorrelationFormula,
+  adaptiveWeightFormula,
+  digitPairFrequencyFormula,
+  monteCarlo3DFormula,
+  unifiedQuantumEngine
 ];
 
-export const MASTER_PATTERN = PATTERNS[0];
+export const MASTER_PATTERN = unifiedQuantumEngine;
 
 // Export individual formulas for direct use
 export {
@@ -394,7 +416,18 @@ export {
   deepLearning4DFormula,
   quantumAnalysisFormula,
   advancedClusterFormula,
-  quantumMaxPattern
+  quantumMaxPattern,
+  bayesianProbabilityFormula,
+  entropyAnalysisFormula,
+  fourierCycleFormula,
+  regressionTrendFormula,
+  patternMemoryFormula,
+  smartFusionFormula,
+  crossCorrelationFormula,
+  adaptiveWeightFormula,
+  digitPairFrequencyFormula,
+  monteCarlo3DFormula,
+  unifiedQuantumEngine
 };
 
 export { MIRRORS };

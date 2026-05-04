@@ -18,7 +18,8 @@ import {
   analyzeHybridPatterns,
   analyzeRepeatProbability,
   PATTERNS,
-  calculateRunningDigits
+  calculateRunningDigits,
+  monteCarlo3DFormula
   } from './services/lottoService';
   import { LottoResult, PredictionResult, BacktestResult, Pattern, HybridPatternInfo, RepeatAnalysis, RunningDigitLog } from './types';
 
@@ -79,7 +80,7 @@ import {
     isRecentlyDrawn: boolean;       // NEW: เลขนี้ออกในงวดล่าสุดหรือไม่
     lastDrawnDate: string;          // NEW: วันที่ออกครั้งล่าสุด
     mirrorNumber: string;           // NEW: เลขกระจก
-    runningDigits: string[];        // NEW: Running digits
+    runningDigits: number[];        // NEW: Running digits
   }>>([]);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [expandedPattern, setExpandedPattern] = useState<string | null>(null);
@@ -126,8 +127,33 @@ import {
       allData
     ).toString().padStart(2, '0');
 
-    // คำนวณเลขเด่นจากสูตรที่ 2: Multiplicative Scalar
-    const runningDigits = calculateRunningDigits(lastResult.r4, parseInt(lastResult.r2, 10));
+    // คำนวณเลขเด่นจาก 21 สูตร - แบบไดนามิก (ไม่เกิน 4 ตัว)
+    const digitFreq = Array(10).fill(0);
+    PATTERNS.forEach(p => {
+      try {
+        const pred = p.calc(
+          allData.length >= 2 ? parseInt(allData[1].r2, 10) : 0,
+          parseInt(lastResult.r2, 10),
+          lastResult.r4,
+          allData
+        ).toString().padStart(2, '0');
+        digitFreq[parseInt(pred[0], 10)]++;
+        digitFreq[parseInt(pred[1], 10)]++;
+      } catch (e) {}
+    });
+    const sortedDigits = digitFreq
+      .map((freq, digit) => ({ digit, freq }))
+      .sort((a, b) => b.freq - a.freq);
+    
+    // เลือกเลขเด่นแบบไดนามิก: ใช้ threshold 60% ของความถี่สูงสุด
+    const maxFreq = sortedDigits[0]?.freq || 1;
+    const threshold = maxFreq * 0.6;
+    const selectedDigits = sortedDigits
+      .filter(d => d.freq >= threshold)
+      .slice(0, 4)
+      .map(x => x.digit);
+    
+    const runningDigits = selectedDigits.length > 0 ? selectedDigits : sortedDigits.slice(0, 2).map(x => x.digit);
 
     return {
       topT, topU, chartData,
@@ -208,6 +234,36 @@ import {
   const calculateRunningDigitsStats = (data: LottoResult[]) => {
     if (data.length < 2) return;
 
+    // Calculate hot digits from all 21 formulas
+    const getHotDigits = (results: LottoResult[]): number[] => {
+      if (results.length < 2) return [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+      const lastResult = results[0];
+      const prevResult = results[1];
+      const prevR2 = parseInt(prevResult.r2, 10);
+      const lastR2Num = parseInt(lastResult.r2, 10);
+      const digitFreq = Array(10).fill(0);
+      PATTERNS.forEach(p => {
+        try {
+          const pred = p.calc(prevR2, lastR2Num, lastResult.r4, results).toString().padStart(2, '0');
+          digitFreq[parseInt(pred[0], 10)]++;
+          digitFreq[parseInt(pred[1], 10)]++;
+        } catch (e) {}
+      });
+      const sortedDigits = digitFreq
+        .map((freq, digit) => ({ digit, freq }))
+        .sort((a, b) => b.freq - a.freq);
+      
+      // เลือกเลขเด่นแบบไดนามิก: ใช้ threshold 60% ของความถี่สูงสุด
+      const maxFreq = sortedDigits[0]?.freq || 1;
+      const threshold = maxFreq * 0.6;
+      const selected = sortedDigits
+        .filter(d => d.freq >= threshold)
+        .slice(0, 4)
+        .map(x => x.digit);
+      
+      return selected.length > 0 ? selected : sortedDigits.slice(0, 2).map(x => x.digit);
+    };
+
     const history: Array<import('./types').RunningDigitLog> = [];
 
     let correct = 0;
@@ -230,11 +286,10 @@ import {
     }
 
     // งวดที่กำลังจะมาถึง (Pending)
-    const latest = data[0];
-    const nextRunningDigits = calculateRunningDigits(latest.r4, parseInt(latest.r2, 10));
+    const nextHotDigits = getHotDigits(data);
     history.push({
       date: 'งวดถัดไป',
-      predicted: nextRunningDigits,
+      predicted: nextHotDigits,
       actual: '--',
       isCorrect: false,
       matchedDigits: 0,
@@ -250,7 +305,7 @@ import {
 
       if (!current || !prev) continue;
 
-      const runningDigits = calculateRunningDigits(prev.r4, parseInt(prev.r2, 10));
+      const runningDigits = getHotDigits(data.slice(i));
       const actualR2 = current.r2;
       const actualTens = parseInt(actualR2[0], 10);
       const actualUnits = parseInt(actualR2[1], 10);
@@ -282,16 +337,13 @@ import {
       });
     }
 
-    const totalRounds = correct + incorrect;
-    const accuracy = totalRounds > 0 ? (correct / totalRounds * 100) : 0;
-
     setRunningDigitsStats({
-      history: history.slice(0, 50), // เพิ่มการแสดงเป็น 50 งวด
       correct,
       incorrect,
-      accuracy,
+      accuracy: (correct + incorrect) > 0 ? (correct / (correct + incorrect)) * 100 : 0,
       currentStreak,
-      bestStreak
+      bestStreak,
+      history: history
     });
   };
 
@@ -388,10 +440,28 @@ import {
     
     const resNum = parseInt(resPri, 10);
 
-    const hLast = parseInt(lastR3[0], 10) || 0;
-    const hPrev = parseInt(prevResult?.r3[0] || "0", 10);
-    const dSum = getDigitSum(lastR4);
-    const predictedH = ( (hLast * 2) + hPrev + dSum + 4 ) % 10;
+    // ===== HOT DIGITS FROM ALL 21 FORMULAS (Dynamic, max 4) =====
+    const digitFreq = Array(10).fill(0);
+    allPredictions.forEach(pred => {
+      const tens = parseInt(pred.value[0], 10);
+      const units = parseInt(pred.value[1], 10);
+      digitFreq[tens]++;
+      digitFreq[units]++;
+    });
+    const sortedHotDigits = digitFreq
+      .map((freq, digit) => ({ digit, freq }))
+      .sort((a, b) => b.freq - a.freq);
+    
+    // เลือกเลขเด่นแบบไดนามิก: ใช้ threshold 60% ของความถี่สูงสุด
+    const maxFreq = sortedHotDigits[0]?.freq || 1;
+    const threshold = maxFreq * 0.6;
+    const hotDigits = sortedHotDigits
+      .filter(d => d.freq >= threshold)
+      .slice(0, 4)
+      .map(x => x.digit);
+
+    // 3-Digit Target: Use Monte Carlo 3D Formula
+    const tripleStr = monteCarlo3DFormula.getTriple ? monteCarlo3DFormula.getTriple(allData) : "000";
 
     const mirrorPair = activePattern.getMirrorPair?.(resNum);
     const mirrorStr = mirrorPair?.toString().padStart(2, '0') || getMirror(resPri);
@@ -414,14 +484,7 @@ import {
       const isRecentlyDrawn = predictionNum === latestR2;
       const wasDrawnRecently = recentDrawnNumbers.includes(predictionNum);
       const mirrorNumber = getMirror(predictionNum);
-      const tens = predictionNum[0];
-      const units = predictionNum[1];
-      const runningDigits = [
-        tens + '0', tens + '1', tens + '2', tens + '3', tens + '4',
-        tens + '5', tens + '6', tens + '7', tens + '8', tens + '9',
-        '0' + units, '1' + units, '2' + units, '3' + units, '4' + units,
-        '5' + units, '6' + units, '7' + units, '8' + units, '9' + units
-      ].filter(d => d !== predictionNum).slice(0, 10);
+      const runningDigits = hotDigits.slice(0, 4);
 
       return {
         name: pred.name,
@@ -445,7 +508,7 @@ import {
       primary: resPri,
       mirror: mirrorStr,
       rhythm: ((parseInt(resPri[0]) + 5) % 10).toString() + ((parseInt(resPri[1]) + 3) % 10).toString(),
-      triple: predictedH.toString() + resPri,
+      triple: tripleStr,
       confidence: combinedConfidence,
       formulaName: activePattern.name
     });
@@ -513,7 +576,7 @@ import {
               </div>
               <p className="section-title text-cyan-500">
                 <span className="w-2 h-2 bg-cyan-500 rounded-full animate-pulse"></span>
-                RUNNING DIGITS
+                เลขเด่นประจำวัน
               </p>
               <div className="mt-6 grid grid-cols-5 gap-3">
                 {stats?.runningDigits.map((digit, idx) => (
@@ -588,7 +651,7 @@ import {
                       <div>
                         <h3 className="text-2xl font-black text-white flex items-center gap-3">
                           <span className="text-3xl">📋</span>
-                          RUNNING DIGITS DAILY LOGS
+                          เลขเด่นประจำวัน DAILY LOGS
                         </h3>
                         <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">
                           สถิติย้อนหลัง <span className="text-cyan-400">{runningDigitsStats.history.length} งวด</span>
@@ -974,27 +1037,63 @@ import {
                     <div className="ultra-huge-text glow-blue group-hover:scale-105 transition-transform duration-500">{manualRes.triple}</div>
                   </div>
                   <div className="p-8 bg-slate-950/60 rounded-[2.5rem] border border-cyan-500/20 shadow-inner group">
-                    <p className="text-center text-[10px] font-black text-cyan-400 uppercase tracking-[0.3em] mb-4">Running Digits</p>
+                    <p className="text-center text-[10px] font-black text-cyan-400 uppercase tracking-[0.3em] mb-4">เลขเด่นประจำวัน</p>
                     <div className="flex justify-center gap-4">
-                      <div className="ultra-huge-text glow-cyan group-hover:-translate-x-2 transition-transform duration-500">{manualRes.primary[0]}</div>
-                      <div className="ultra-huge-text glow-cyan group-hover:translate-x-2 transition-transform duration-500">{manualRes.primary[1]}</div>
+                      {stats?.runningDigits.map((digit, idx) => (
+                        <div key={idx} className="ultra-huge-text glow-cyan group-hover:-translate-x-2 transition-transform duration-500">{digit}</div>
+                      ))}
                     </div>
+                    <p className="text-center text-[10px] font-black text-cyan-400 mt-2">{stats?.runningDigits.length} DIGITS</p>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="glass-card !p-6 text-center !border-t-2 !border-t-cyan-500 !bg-slate-900/20 hover:!bg-slate-900/40 transition-colors">
-                    <p className="text-[10px] font-black text-cyan-500 uppercase tracking-widest mb-2">Primary</p>
-                    <div className="text-3xl font-black text-white">{manualRes.primary}</div>
-                  </div>
-                  <div className="glass-card !p-6 text-center !border-t-2 !border-t-amber-500 !bg-slate-900/20 hover:!bg-slate-900/40 transition-colors">
-                    <p className="text-[10px] font-black text-amber-500 uppercase tracking-widest mb-2">Mirror</p>
-                    <div className="text-3xl font-black text-white">{manualRes.mirror}</div>
-                  </div>
-                  <div className="glass-card !p-6 text-center !border-t-2 !border-t-indigo-500 !bg-slate-900/20 hover:!bg-slate-900/40 transition-colors">
-                    <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-2">Rhythm</p>
-                    <div className="text-3xl font-black text-white">{manualRes.rhythm}</div>
-                  </div>
+                <div className="space-y-3">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center mb-4">📊 ผลทำนายจาก 21 สูตร (กรองเลขซ้ำ - เลือกสูตรที่ดีที่สุด)</p>
+                  {(() => {
+                    // Group predictions by value, keep only the best formula for each number
+                    const predictionMap: Record<string, { name: string; accuracy: number; stability: number; score: number }> = {};
+                    allPatternPredictions
+                      .filter(pred => pred.currentAccuracy >= 10.0)
+                      .forEach(pred => {
+                      const existing = predictionMap[pred.prediction];
+                      const predScore = (pred.currentAccuracy * 0.5) + (pred.stabilityScore * 0.3) + (pred.historicalAccuracy * 0.2);
+                      if (!existing || predScore > existing.score) {
+                        predictionMap[pred.prediction] = {
+                          name: pred.name,
+                          accuracy: pred.currentAccuracy,
+                          stability: pred.stabilityScore,
+                          score: predScore
+                        };
+                      }
+                    });
+                    // Sort by score descending
+                    const uniquePredictions = Object.entries(predictionMap)
+                      .sort((a, b) => b[1].score - a[1].score);
+                    
+                    return uniquePredictions.map(([number, info], idx) => (
+                      <div key={number} className={`flex items-center justify-between p-4 rounded-2xl border transition-all ${
+                        idx === 0 
+                          ? 'bg-gradient-to-r from-emerald-500/15 to-transparent border-emerald-500/40' 
+                          : 'bg-slate-900/50 border-slate-700/50 hover:border-cyan-500/30'
+                      }`}>
+                        <div className="flex items-center gap-4">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg ${
+                            idx === 0 ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-cyan-400'
+                          }`}>
+                            {idx + 1}
+                          </div>
+                          <div>
+                            <div className="text-2xl font-black text-white">{number}</div>
+                            <div className="text-[10px] text-slate-500 font-medium">{info.name}</div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4 text-[10px] font-black">
+                          <span className="text-emerald-400">Accuracy: {info.accuracy.toFixed(1)}%</span>
+                          <span className="text-cyan-400">Stability: {info.stability}</span>
+                        </div>
+                      </div>
+                    ));
+                  })()}
                 </div>
               </div>
             )}
@@ -1612,7 +1711,7 @@ import {
                             {pattern.isRecentlyDrawn && (
                               <div className="mb-6 p-4 bg-cyan-500/10 border border-cyan-500/30 rounded-xl">
                                 <h5 className="text-sm font-black text-cyan-400 uppercase mb-3">
-                                  🔄 Running Digits - เลขทางเลือก (10 ตัว)
+                                  เลขเด่นประจำวัน
                                 </h5>
                                 <div className="grid grid-cols-10 gap-2">
                                   {pattern.runningDigits.map((digit, idx) => (
