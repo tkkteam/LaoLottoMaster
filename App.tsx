@@ -21,6 +21,7 @@ import {
   calculateRunningDigits,
   monteCarlo3DFormula
   } from './services/lottoService';
+  import { neuralAI } from './services/neuralAIService';
   import { LottoResult, PredictionResult, BacktestResult, Pattern, HybridPatternInfo, RepeatAnalysis, RunningDigitLog } from './types';
 
   interface StatsResult {
@@ -49,6 +50,10 @@ import {
   const [showBackyardLogs, setShowBackyardLogs] = useState(false);
   const [backyardBacktest, setBackyardBacktest] = useState<import('./services/lottoService').BackyardBacktestResult | null>(null);
   const [backyardConstants, setBackyardConstants] = useState<{ a: number; b: number; c: number }>({ a: 6, b: 7, c: 1 });
+
+  // NEW: Neural AI Prediction
+  const [neuralPrediction, setNeuralPrediction] = useState<{ prediction: string, confidence: number } | null>(null);
+  const [isTraining, setIsTraining] = useState(false);
 
   // NEW: Running Digits 30-Draw Statistics
   const [runningDigitsStats, setRunningDigitsStats] = useState<{
@@ -169,6 +174,26 @@ import {
       autoCalculate();
     }
   }, [allData, bestPatternInfo, stats, hybridPatterns]);
+
+  // NEW: Neural AI Training
+  useEffect(() => {
+    if (allData.length >= 20) {
+      trainNeuralAI();
+    }
+  }, [allData]);
+
+  const trainNeuralAI = async () => {
+    setIsTraining(true);
+    try {
+      await neuralAI.train(allData);
+      const last10 = allData.slice(0, 10).map(d => parseInt(d.r2, 10));
+      const pred = neuralAI.predict(last10);
+      setNeuralPrediction(pred);
+    } catch (e) {
+      console.error('Neural AI Training Error:', e);
+    }
+    setIsTraining(false);
+  };
 
   // Recalculate Running Digits stats when data changes
   useEffect(() => {
@@ -548,6 +573,57 @@ import {
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         <main className="lg:col-span-8 space-y-8">
+          {/* Neural Quantum AI - TOP CARD */}
+          <div className="glass-card !border-t-4 !border-t-purple-600 !bg-gradient-to-br from-purple-900/20 to-transparent relative overflow-hidden group">
+            <div className="absolute top-0 right-0 p-6 opacity-10 group-hover:scale-125 transition-transform duration-700">
+              <svg className="w-32 h-32 text-purple-500" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M11 3a1 1 0 10-2 0v1a1 1 0 102 0V3zM15.657 5.757a1 1 0 00-1.414-1.414l-.707.707a1 1 0 001.414 1.414l.707-.707zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM5.05 6.464A1 1 0 106.464 5.05l-.707-.707a1 1 0 00-1.414 1.414l.707.707zM5 10a1 1 0 01-1 1H3a1 1 0 110-2h1a1 1 0 011 1zM8 16v-1a1 1 0 112 0v1a1 1 0 11-2 0zM13.464 15.05a1 1 0 010 1.414l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 14a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1z" />
+              </svg>
+            </div>
+            
+            <div className="flex flex-col md:flex-row justify-between items-center gap-6">
+              <div className="text-center md:text-left">
+                <p className="section-title text-purple-400 !mb-2">
+                  <span className="w-2.5 h-2.5 bg-purple-500 rounded-full animate-ping"></span>
+                  NEURAL QUANTUM AI (Deep Learning V4)
+                </p>
+                <h2 className="text-3xl md:text-5xl font-black text-white glow-purple tracking-tighter">
+                  {isTraining ? (
+                    <span className="animate-pulse">TRAINING AI...</span>
+                  ) : neuralPrediction ? (
+                    neuralPrediction.prediction
+                  ) : (
+                    '--'
+                  )}
+                </h2>
+                <div className="mt-2 flex items-center gap-3 justify-center md:justify-start">
+                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Confidence Score:</span>
+                  <span className="text-purple-400 font-black text-xs">
+                    {neuralPrediction ? (neuralPrediction.confidence * 100).toFixed(2) : '0.00'}%
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex flex-col items-center md:items-end gap-2">
+                <div className="flex gap-2">
+                  <div className="w-20 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                    <div className={`h-full bg-purple-500 transition-all duration-1000 ${isTraining ? 'animate-shimmer' : ''}`} style={{ width: isTraining ? '100%' : '75%' }}></div>
+                  </div>
+                </div>
+                <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest">
+                  {isTraining ? 'Processing Tensor History...' : 'Model Optimized for 00-99 Prediction'}
+                </p>
+                <button 
+                  onClick={trainNeuralAI} 
+                  disabled={isTraining}
+                  className="mt-2 px-4 py-1.5 bg-purple-600/20 hover:bg-purple-600/40 border border-purple-500/30 rounded-xl text-[10px] font-black text-purple-400 uppercase tracking-widest transition-all disabled:opacity-50"
+                >
+                  {isTraining ? 'NEURAL ENGINE BUSY' : '⚡ FORCE RE-TRAIN'}
+                </button>
+              </div>
+            </div>
+          </div>
+
           {/* Main Highlights */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="glass-card !border-t-4 !border-t-emerald-500 relative overflow-hidden group">
