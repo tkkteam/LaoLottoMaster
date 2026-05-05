@@ -36,8 +36,25 @@ export class LotteryAI {
     return model;
   }
 
-  async train(history: LottoResult[]) {
+  async train(history: LottoResult[], force = false) {
     if (history.length < 20) return;
+
+    // Try to load existing model first if not forcing re-train
+    if (!force) {
+      try {
+        const loadedModel = await tf.loadLayersModel('indexeddb://lottery-ai-model');
+        this.model = loadedModel;
+        this.model.compile({
+          optimizer: 'adam',
+          loss: 'categoricalCrossentropy',
+          metrics: ['accuracy'],
+        });
+        console.log('🧠 Neural AI: Loaded existing model from memory');
+        return;
+      } catch (e) {
+        console.log('🧠 Neural AI: No saved model found, starting fresh training');
+      }
+    }
 
     const xTrain: number[][] = [];
     const yTrain: number[][] = [];
@@ -46,7 +63,7 @@ export class LotteryAI {
     for (let i = history.length - 11; i >= 0; i--) {
       const window = history.slice(i + 1, i + 11).map(d => parseInt(d.r2, 10) / 100);
       const label = parseInt(history[i].r2, 10);
-      
+
       const oneHot = new Array(100).fill(0);
       oneHot[label] = 1;
 
@@ -62,6 +79,14 @@ export class LotteryAI {
       batchSize: 16,
       verbose: 0
     });
+
+    // Save the model to IndexedDB
+    try {
+      await this.model.save('indexeddb://lottery-ai-model');
+      console.log('🧠 Neural AI: Model saved to memory successfully');
+    } catch (e) {
+      console.error('🧠 Neural AI: Failed to save model', e);
+    }
 
     xs.dispose();
     ys.dispose();

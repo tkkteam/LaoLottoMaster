@@ -19,9 +19,14 @@ import {
   analyzeRepeatProbability,
   PATTERNS,
   calculateRunningDigits,
-  monteCarlo3DFormula
+  monteCarlo3DFormula,
+  unified3DEngine
   } from './services/lottoService';
-  import { neuralAI } from './services/neuralAIService';
+
+import { backtestHotnumber1 } from './services/hotnumber1Backtest';
+import { getHotDigits as getHotNumber1Digits } from './services/formulas/Hotnumber1';
+import { neuralAI } from './services/neuralAIService';
+
   import { LottoResult, PredictionResult, BacktestResult, Pattern, HybridPatternInfo, RepeatAnalysis, RunningDigitLog } from './types';
 
   interface StatsResult {
@@ -50,6 +55,7 @@ import {
   const [showBackyardLogs, setShowBackyardLogs] = useState(false);
   const [backyardBacktest, setBackyardBacktest] = useState<import('./services/lottoService').BackyardBacktestResult | null>(null);
   const [backyardConstants, setBackyardConstants] = useState<{ a: number; b: number; c: number }>({ a: 6, b: 7, c: 1 });
+  const [isHot1Enabled, setIsHot1Enabled] = useState(false);
 
   // NEW: Neural AI Prediction
   const [neuralPrediction, setNeuralPrediction] = useState<{ prediction: string, confidence: number } | null>(null);
@@ -146,8 +152,20 @@ import {
         digitFreq[parseInt(pred[1], 10)]++;
       } catch (e) {}
     });
+
+    // NEW: Recency Penalty for Running Digits
+    // หักคะแนนเลขที่เพิ่งออกไปใน 2 งวดล่าสุด เพื่อให้เลขเด่นเปลี่ยนชุด
+    const recentDigits = new Set([
+      ...allData[0].r2.split('').map(d => parseInt(d, 10)),
+      ...(allData[1]?.r2.split('').map(d => parseInt(d, 10)) || [])
+    ]);
+
     const sortedDigits = digitFreq
-      .map((freq, digit) => ({ digit, freq }))
+      .map((freq, digit) => {
+        let finalFreq = freq;
+        if (recentDigits.has(digit)) finalFreq *= 0.5; // หักคะแนนเลขเพิ่งออก 50%
+        return { digit, freq: finalFreq };
+      })
       .sort((a, b) => b.freq - a.freq);
     
     // เลือกเลขเด่นแบบไดนามิก: ใช้ threshold 60% ของความถี่สูงสุด
@@ -160,12 +178,20 @@ import {
     
     const runningDigits = selectedDigits.length > 0 ? selectedDigits : sortedDigits.slice(0, 2).map(x => x.digit);
 
+    // ✅ CONDITIONAL INTEGRATION: Hotnumber1 (ถ้าถูกเกิน 20/30 งวด)
+    let finalRunningDigits = [...runningDigits];
+    if (isHot1Enabled) {
+      const hot1Digits = getHotNumber1Digits(allData).slice(0, 3).map(d => parseInt(d.digit, 10));
+      // รวมเลขจาก Hotnumber1 เข้าไป (ไม่ซ้ำ)
+      finalRunningDigits = Array.from(new Set([...finalRunningDigits, ...hot1Digits])).sort((a, b) => a - b);
+    }
+
     return {
       topT, topU, chartData,
       parityData: [{ name: 'คู่', value: even }, { name: 'คี่', value: odd }],
       backyard: calculateBackyard(lastResult.r3, lastResult.r4, backyardConstants),
       aiMaster: aiMasterNum,
-      runningDigits: runningDigits
+      runningDigits: finalRunningDigits
     };
   }, [allData, bestPatternInfo, backyardConstants]);
 
@@ -182,10 +208,10 @@ import {
     }
   }, [allData]);
 
-  const trainNeuralAI = async () => {
+  const trainNeuralAI = async (force = false) => {
     setIsTraining(true);
     try {
-      await neuralAI.train(allData);
+      await neuralAI.train(allData, force);
       const last10 = allData.slice(0, 10).map(d => parseInt(d.r2, 10));
       const pred = neuralAI.predict(last10);
       setNeuralPrediction(pred);
@@ -228,7 +254,23 @@ import {
     const data = await fetchLottoData();
     setAllData(data);
 
-    if (data.length > 0) {
+    if (data.length > 30) {
+      // BACKTEST HOTNUMBER1 - วิเคราะห์ย้อนหลัง 30 งวด
+      const hot1Bt = backtestHotnumber1(data, 30);
+      if (hot1Bt) {
+        console.log(`\n🔥 HOTNUMBER1 BACKTEST (30 Rounds):`);
+        console.log(`   Hits: ${hot1Bt.hits}/30 (${hot1Bt.accuracy.toFixed(1)}%)`);
+        
+        // ถ้าถูกเกิน 20 งวด ให้เปิดใช้งานระบบเสริม
+        if (hot1Bt.hits >= 20) {
+          console.log(`   ✅ CRITERIA MET: Integrating Hotnumber1 into Daily Running Digits`);
+          setIsHot1Enabled(true);
+        } else {
+          console.log(`   ❌ CRITERIA NOT MET: Using Standard Ensemble only`);
+          setIsHot1Enabled(false);
+        }
+      }
+
       // HYBRID ANALYSIS - ต้องทำก่อน เพื่อเลือก Active Master ที่ถูกต้อง
       const hybrid = analyzeHybridPatterns(data, undefined, 4); // ครั้งแรกไม่มี currentMaster
       setHybridPatterns(hybrid);
@@ -384,6 +426,9 @@ import {
       return;
     }
 
+    // Clear previous results to show update
+    setManualRes(null);
+
     const lastResult = allData[0];
     const prevResult = allData[1];
     const prevR2 = parseInt(prevResult.r2, 10);
@@ -434,6 +479,9 @@ import {
     const lastR2Str = lastResult.r2.padStart(2, '0');
     const isRepeatDetected = lastR2Str === prevResult.r2.padStart(2, '0');
     
+    // Recent 5 results to avoid
+    const recent5Results = allData.slice(0, 5).map(r => r.r2.padStart(2, '0'));
+    
     const numberScores: Record<string, number> = {};
     
     allPredictions.forEach(pred => {
@@ -448,10 +496,20 @@ import {
       weight = (weight / 2) * learningBonus;
 
       const gap = numberGaps[pred.value] || 0;
-      if (gap > 20) weight *= 1.3;
-      if (gap < 3 && gap > 0) weight *= 0.5;
+      
+      // Dynamic Penalization
+      if (recent5Results.includes(pred.value)) {
+        // Strongly penalize numbers that just came out
+        const recencyIndex = recent5Results.indexOf(pred.value);
+        const penalty = 0.1 * (5 - recencyIndex); // Penalty 0.5, 0.4, 0.3, 0.2, 0.1
+        weight *= penalty;
+      } else if (gap > 30) {
+        weight *= 1.4; // Cold number bonus
+      } else if (gap > 15) {
+        weight *= 1.2;
+      }
 
-      if (isRepeatDetected && pred.value === lastR2Str) weight *= 0.05;
+      if (isRepeatDetected && pred.value === lastR2Str) weight *= 0.01;
       
       numberScores[pred.value] = (numberScores[pred.value] || 0) + weight;
     });
@@ -485,8 +543,8 @@ import {
       .slice(0, 4)
       .map(x => x.digit);
 
-    // 3-Digit Target: Use Monte Carlo 3D Formula
-    const tripleStr = monteCarlo3DFormula.getTriple ? monteCarlo3DFormula.getTriple(allData) : "000";
+    // 3-Digit Target: Use the new Unified 3D Engine
+    const tripleStr = unified3DEngine.getTriple ? unified3DEngine.getTriple(allData) : "000";
 
     const mirrorPair = activePattern.getMirrorPair?.(resNum);
     const mirrorStr = mirrorPair?.toString().padStart(2, '0') || getMirror(resPri);
@@ -560,7 +618,7 @@ import {
             <h1 className="text-white font-black text-xl md:text-3xl leading-none">
               LAO LOTTO <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-emerald-400 glow-cyan">AI MASTER</span>
             </h1>
-            <p className="text-[10px] font-black uppercase text-slate-500 tracking-[0.2em] mt-1">TiGDev Enterprise Production v3.8</p>
+            <p className="text-[10px] font-black uppercase text-slate-500 tracking-[0.2em] mt-1">TiGDev Enterprise Production v5.0</p>
           </div>
         </div>
         
@@ -684,75 +742,77 @@ import {
                 </button>
               </div>
 
-              {/* RUNNING DIGITS 30-DRAW STATISTICS - Simple */}
+              {/* RUNNING DIGITS CUMULATIVE STATISTICS */}
               {runningDigitsStats.history.length > 0 && (
                 <div className="mt-6 pt-6 border-t border-cyan-500/20">
-                  <div className="flex items-center justify-between">
-                    <p className="text-[10px] font-black text-cyan-500 uppercase tracking-widest">
-                      📊 สถิติย้อนหลัง 30 งวด
+                  <div className="flex flex-col gap-4">
+                    <p className="text-[10px] font-black text-cyan-500 uppercase tracking-widest text-center">
+                      📊 สถิติสะสมตั้งแต่วันที่ 02/01/2569 ถึงปัจจุบัน
                     </p>
-                    <div className="flex items-center gap-6">
+                    <div className="flex items-center justify-around">
                       <div className="text-center">
-                        <p className="text-[9px] font-black text-slate-600 uppercase mb-1">ถูก</p>
+                        <p className="text-[9px] font-black text-slate-600 uppercase mb-1">ถูก (ครั้ง)</p>
                         <p className="text-2xl font-black text-emerald-400">{runningDigitsStats.correct}</p>
                       </div>
                       <div className="text-center">
-                        <p className="text-[9px] font-black text-slate-600 uppercase mb-1">ผิด</p>
+                        <p className="text-[9px] font-black text-slate-600 uppercase mb-1">ผิด (ครั้ง)</p>
                         <p className="text-2xl font-black text-red-400">{runningDigitsStats.incorrect}</p>
                       </div>
                       <div className="text-center">
-                        <p className="text-[9px] font-black text-slate-600 uppercase mb-1">แม่น</p>
+                        <p className="text-[9px] font-black text-slate-600 uppercase mb-1">แม่นยำ</p>
                         <p className="text-2xl font-black text-cyan-400">{runningDigitsStats.accuracy.toFixed(1)}%</p>
                       </div>
                     </div>
                   </div>
                 </div>
               )}
+
             </div>
 
             {/* DAILY LOGS MODAL OVERLAY */}
             {showRunningLogs && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-in fade-in duration-300">
+              <div className="fixed inset-0 z-[100] flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-300">
                 {/* Backdrop */}
                 <div
-                  className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm"
+                  className="absolute inset-0 bg-slate-950/90 backdrop-blur-md"
                   onClick={() => setShowRunningLogs(false)}
                 ></div>
-                
+
                 {/* Modal Content */}
-                <div className="relative w-full max-w-6xl max-h-[90vh] bg-slate-900 border border-cyan-500/30 rounded-3xl shadow-2xl shadow-cyan-500/10 overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
+                <div className="relative w-full max-w-6xl max-h-[95vh] bg-slate-900 border border-cyan-500/30 rounded-2xl sm:rounded-3xl shadow-2xl shadow-cyan-500/10 overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
                   {/* Header */}
-                  <div className="flex-shrink-0 p-6 border-b border-cyan-500/20 bg-gradient-to-r from-cyan-500/10 to-transparent">
-                    <div className="flex justify-between items-center">
-                      <div>
-                        <h3 className="text-2xl font-black text-white flex items-center gap-3">
-                          <span className="text-3xl">📋</span>
-                          เลขเด่นประจำวัน DAILY LOGS
+                  <div className="flex-shrink-0 p-4 sm:p-6 border-b border-cyan-500/20 bg-gradient-to-r from-cyan-500/10 to-transparent">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                      <div className="w-full sm:w-auto">
+                        <h3 className="text-xl sm:text-2xl font-black text-white flex items-center gap-2 sm:gap-3">
+                          <span className="text-2xl sm:text-3xl">📋</span>
+                          <span className="whitespace-nowrap overflow-hidden text-ellipsis">DAILY LOGS</span>
                         </h3>
-                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">
+                        <p className="text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">
                           สถิติย้อนหลัง <span className="text-cyan-400">{runningDigitsStats.history.length} งวด</span>
                         </p>
                       </div>
-                      <div className="flex items-center gap-4">
+
+                      <div className="flex items-center justify-between w-full sm:w-auto gap-3 sm:gap-4">
                         {/* Stats Summary */}
-                        <div className="flex gap-4">
-                          <div className="text-center px-3 py-1 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
-                            <p className="text-[9px] font-black text-slate-500 uppercase">ถูก</p>
-                            <p className="text-lg font-black text-emerald-400">{runningDigitsStats.correct}</p>
+                        <div className="flex gap-2 sm:gap-4 flex-1 sm:flex-none">
+                          <div className="flex-1 sm:flex-none text-center px-2 sm:px-3 py-1 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
+                            <p className="text-[8px] sm:text-[9px] font-black text-slate-500 uppercase">ถูก</p>
+                            <p className="text-base sm:text-lg font-black text-emerald-400">{runningDigitsStats.correct}</p>
                           </div>
-                          <div className="text-center px-3 py-1 bg-red-500/10 rounded-lg border border-red-500/20">
-                            <p className="text-[9px] font-black text-slate-500 uppercase">ผิด</p>
-                            <p className="text-lg font-black text-red-400">{runningDigitsStats.incorrect}</p>
+                          <div className="flex-1 sm:flex-none text-center px-2 sm:px-3 py-1 bg-red-500/10 rounded-lg border border-red-500/20">
+                            <p className="text-[8px] sm:text-[9px] font-black text-slate-500 uppercase">ผิด</p>
+                            <p className="text-base sm:text-lg font-black text-red-400">{runningDigitsStats.incorrect}</p>
                           </div>
-                          <div className="text-center px-3 py-1 bg-cyan-500/10 rounded-lg border border-cyan-500/20">
-                            <p className="text-[9px] font-black text-slate-500 uppercase">แม่น</p>
-                            <p className="text-lg font-black text-cyan-400">{runningDigitsStats.accuracy.toFixed(1)}%</p>
+                          <div className="flex-1 sm:flex-none text-center px-2 sm:px-3 py-1 bg-cyan-500/10 rounded-lg border border-cyan-500/20">
+                            <p className="text-[8px] sm:text-[9px] font-black text-slate-500 uppercase">แม่น</p>
+                            <p className="text-base sm:text-lg font-black text-cyan-400">{runningDigitsStats.accuracy.toFixed(1)}%</p>
                           </div>
                         </div>
                         {/* Close Button */}
                         <button
                           onClick={() => setShowRunningLogs(false)}
-                          className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-800 border border-slate-700 text-slate-400 hover:text-white hover:border-cyan-500/50 transition-all"
+                          className="w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl bg-slate-800 border border-slate-700 text-slate-400 hover:text-white hover:border-cyan-500/50 transition-all"
                         >
                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
@@ -761,88 +821,91 @@ import {
                       </div>
                     </div>
                   </div>
-                  
+
                   {/* Table Content - Scrollable */}
-                  <div className="flex-1 overflow-y-auto p-6">
-                    <table className="w-full text-sm">
-                      <thead className="sticky top-0 bg-slate-900 z-10">
-                        <tr className="border-b border-slate-700">
-                          <th className="text-left py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">วันที่</th>
-                          <th className="text-center py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">เลขเด่นที่คำนวณได้</th>
-                          <th className="text-center py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">ผลที่ออก (2 ตัว)</th>
-                          <th className="text-center py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">ผลลัพธ์</th>
-                          <th className="text-right py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">สถานะ</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {runningDigitsStats.history.map((log, idx) => (
-                          <tr
-                            key={idx}
-                            className={`border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors ${
-                              log.status === 'WIN' ? 'bg-emerald-500/5' : log.status === 'LOSS' ? 'bg-red-500/5' : ''
-                            }`}
-                          >
-                            <td className="py-3 px-4">
-                              <span className={`font-black ${log.status === 'PENDING' ? 'text-cyan-400 animate-pulse' : 'text-slate-400'}`}>
-                                {log.date}
-                              </span>
-                            </td>
-                            <td className="py-3 px-4 text-center">
-                              <div className="flex justify-center gap-2">
-                                {log.predicted.map((d, i) => (
-                                  <span
-                                    key={i}
-                                    className={`w-8 h-8 flex items-center justify-center rounded-lg font-black text-sm ${
-                                      log.status === 'WIN' && log.actual.includes(d.toString())
-                                        ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20 scale-110'
-                                        : 'bg-slate-800 text-white'
-                                    }`}
-                                  >
-                                    {d}
-                                  </span>
-                                ))}
-                              </div>
-                            </td>
-                            <td className="py-3 px-4 text-center">
-                              <span className={`text-lg font-black ${log.status === 'WIN' ? 'text-emerald-400' : 'text-slate-500'}`}>
-                                {log.actual}
-                              </span>
-                            </td>
-                            <td className="py-3 px-4 text-center">
-                              {log.status === 'WIN' ? (
-                                <div className="flex flex-col items-center">
-                                  <span className="text-emerald-400 font-black text-xs">MATCHED</span>
-                                  <span className="text-[10px] text-slate-600 font-black">{log.matchedDigits} DIGITS</span>
-                                </div>
-                              ) : log.status === 'LOSS' ? (
-                                <span className="text-red-400 font-black text-xs opacity-50">MISS</span>
-                              ) : (
-                                <span className="text-cyan-400 font-black text-xs animate-pulse">AWAITING...</span>
-                              )}
-                            </td>
-                            <td className="py-3 px-4 text-right">
-                              {log.status === 'WIN' ? (
-                                <span className="px-3 py-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full text-[10px] font-black uppercase tracking-widest">
-                                  WIN ✅
-                                </span>
-                              ) : log.status === 'LOSS' ? (
-                                <span className="px-3 py-1 bg-red-500/20 text-red-400 border border-red-500/30 rounded-full text-[10px] font-black uppercase tracking-widest">
-                                  LOSS ❌
-                                </span>
-                              ) : (
-                                <span className="px-3 py-1 bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 rounded-full text-[10px] font-black uppercase tracking-widest animate-pulse">
-                                  PENDING 🔄
-                                </span>
-                              )}
-                            </td>
+                  <div className="flex-1 overflow-auto p-2 sm:p-6">
+                    <div className="min-w-[500px] sm:min-w-full">
+                      <table className="w-full text-sm">
+                        <thead className="sticky top-0 bg-slate-900 z-10">
+                          <tr className="border-b border-slate-700">
+                            <th className="text-left py-3 px-2 sm:px-4 text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-widest">วันที่</th>
+                            <th className="text-center py-3 px-2 sm:px-4 text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-widest">เลขเด่นที่คำนวณได้</th>
+                            <th className="text-center py-3 px-2 sm:px-4 text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-widest">ผลที่ออก</th>
+                            <th className="text-center py-3 px-2 sm:px-4 text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-widest">ผลลัพธ์</th>
+                            <th className="text-right py-3 px-2 sm:px-4 text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-widest">สถานะ</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody>
+                          {runningDigitsStats.history.map((log, idx) => (
+                            <tr
+                              key={idx}
+                              className={`border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors ${
+                                log.status === 'WIN' ? 'bg-emerald-500/5' : log.status === 'LOSS' ? 'bg-red-500/5' : ''
+                              }`}
+                            >
+                              <td className="py-3 px-2 sm:px-4">
+                                <span className={`font-black text-[11px] sm:text-sm ${log.status === 'PENDING' ? 'text-cyan-400 animate-pulse' : 'text-slate-400'}`}>
+                                  {log.date}
+                                </span>
+                              </td>
+                              <td className="py-3 px-2 sm:px-4 text-center">
+                                <div className="flex justify-center gap-1 sm:gap-2">
+                                  {log.predicted.map((d, i) => (
+                                    <span
+                                      key={i}
+                                      className={`w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-lg font-black text-xs sm:text-sm ${
+                                        log.status === 'WIN' && log.actual.includes(d.toString())
+                                          ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20 scale-110'
+                                          : 'bg-slate-800 text-white'
+                                      }`}
+                                    >
+                                      {d}
+                                    </span>
+                                  ))}
+                                </div>
+                              </td>
+                              <td className="py-3 px-2 sm:px-4 text-center">
+                                <span className={`text-base sm:text-lg font-black ${log.status === 'WIN' ? 'text-emerald-400' : 'text-slate-500'}`}>
+                                  {log.actual}
+                                </span>
+                              </td>
+                              <td className="py-3 px-2 sm:px-4 text-center">
+                                {log.status === 'WIN' ? (
+                                  <div className="flex flex-col items-center">
+                                    <span className="text-emerald-400 font-black text-[9px] sm:text-xs">MATCHED</span>
+                                    <span className="text-[8px] sm:text-[10px] text-slate-600 font-black">{log.matchedDigits} DIGITS</span>
+                                  </div>
+                                ) : log.status === 'LOSS' ? (
+                                  <span className="text-red-400 font-black text-[9px] sm:text-xs opacity-50">MISS</span>
+                                ) : (
+                                  <span className="text-cyan-400 font-black text-[9px] sm:text-xs animate-pulse">AWAITING...</span>
+                                )}
+                              </td>
+                              <td className="py-3 px-2 sm:px-4 text-right">
+                                {log.status === 'WIN' ? (
+                                  <span className="px-2 sm:px-3 py-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full text-[8px] sm:text-[10px] font-black uppercase tracking-widest">
+                                    WIN ✅
+                                  </span>
+                                ) : log.status === 'LOSS' ? (
+                                  <span className="px-2 sm:px-3 py-1 bg-red-500/20 text-red-400 border border-red-500/30 rounded-full text-[8px] sm:text-[10px] font-black uppercase tracking-widest">
+                                    LOSS ❌
+                                  </span>
+                                ) : (
+                                  <span className="px-2 sm:px-3 py-1 bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 rounded-full text-[8px] sm:text-[10px] font-black uppercase tracking-widest animate-pulse">
+                                    WAIT 🔄
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
               </div>
             )}
+
           </div>
 
           {/* REPEAT ANALYSIS */}
@@ -1086,15 +1149,21 @@ import {
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
               <div>
                 <h3 className="text-xl font-black text-white tracking-tight">Quantum Analysis Engine</h3>
-                <p className="text-xs text-slate-500 mt-1 font-medium">ชุดข้อมูลประมวลผลผ่าน Neural Network ประจำงวดปัจจุบัน</p>
+                <p className="text-xs text-slate-500 mt-1 font-medium">
+                  ชุดข้อมูลประมวลผลผ่าน Neural Network ประจำงวด: <span className="text-emerald-400 font-bold">{allData[0]?.date || '--/--/----'}</span>
+                </p>
               </div>
               <div className="flex items-center gap-3">
                 <span className="flex items-center gap-2 text-[10px] font-black text-emerald-400 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-full">
                   <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-ping"></span>
                   LIVE ENGINE
                 </span>
-                <button onClick={autoCalculate} className="btn-sync !py-1.5 !px-4">
-                  RE-ANALYZE
+                <button 
+                  onClick={loadData} 
+                  className={`btn-sync !py-1.5 !px-4 ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  disabled={loading}
+                >
+                  {loading ? 'SYNCING...' : 'RE-ANALYZE'}
                 </button>
                 <button 
                   onClick={() => setShowLeaderboard(!showLeaderboard)} 
@@ -1528,43 +1597,45 @@ import {
 
           {/* ALGORITHM LEADERBOARD MODAL OVERLAY */}
           {showLeaderboard && allPatternPredictions.length > 0 && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-in fade-in duration-300">
+            <div className="fixed inset-0 z-[110] flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-300">
               {/* Backdrop */}
               <div
-                className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm"
+                className="absolute inset-0 bg-slate-950/90 backdrop-blur-md"
                 onClick={() => { setShowLeaderboard(false); setExpandedPattern(null); }}
               ></div>
               
               {/* Modal Content */}
-              <div className="relative w-full max-w-7xl max-h-[90vh] bg-slate-900 border border-purple-500/30 rounded-3xl shadow-2xl shadow-purple-500/10 overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
+              <div className="relative w-full max-w-7xl max-h-[95vh] bg-slate-900 border border-purple-500/30 rounded-2xl sm:rounded-3xl shadow-2xl shadow-purple-500/10 overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
                 {/* Header */}
-                <div className="flex-shrink-0 p-6 border-b border-purple-500/20 bg-gradient-to-r from-purple-500/10 to-transparent">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <h3 className="text-2xl font-black text-white flex items-center gap-3">
-                        <span className="text-3xl">🎯</span>
-                        ALGORITHM LEADERBOARD
+                <div className="flex-shrink-0 p-4 sm:p-6 border-b border-purple-500/20 bg-gradient-to-r from-purple-500/10 to-transparent">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                    <div className="w-full sm:w-auto">
+                      <h3 className="text-xl sm:text-2xl font-black text-white flex items-center gap-2 sm:gap-3">
+                        <span className="text-2xl sm:text-3xl">🎯</span>
+                        <span className="whitespace-nowrap overflow-hidden text-ellipsis">ALGORITHM LEADERBOARD</span>
                       </h3>
-                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">
+                      <p className="text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">
                         เปรียบเทียบเลขที่แต่ละสูตรทำนาย พร้อมสถิติย้อนหลัง
                       </p>
                     </div>
-                    <div className="flex items-center gap-4">
+                    
+                    <div className="flex items-center justify-between w-full sm:w-auto gap-3 sm:gap-4">
                       {/* Stats Summary */}
-                      <div className="flex gap-3">
-                        <div className="text-center px-3 py-1 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
-                          <p className="text-[9px] font-black text-slate-500 uppercase">Qualified</p>
-                          <p className="text-lg font-black text-emerald-400">{hybridPatterns.filter(h => h.isQualified).length}</p>
+                      <div className="flex gap-2 sm:gap-3 flex-1 sm:flex-none">
+                        <div className="flex-1 sm:flex-none text-center px-2 sm:px-3 py-1 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
+                          <p className="text-[8px] sm:text-[9px] font-black text-slate-500 uppercase">Qualified</p>
+                          <p className="text-base sm:text-lg font-black text-emerald-400">{hybridPatterns.filter(h => h.isQualified).length}</p>
                         </div>
-                        <div className="text-center px-3 py-1 bg-purple-500/10 rounded-lg border border-purple-500/20">
-                          <p className="text-[9px] font-black text-slate-500 uppercase">Total</p>
-                          <p className="text-lg font-black text-purple-400">{allPatternPredictions.length}</p>
+                        <div className="text-center px-2 sm:px-3 py-1 bg-purple-500/10 rounded-lg border border-purple-500/20 flex-1 sm:flex-none">
+                          <p className="text-[8px] sm:text-[9px] font-black text-slate-500 uppercase">Total</p>
+                          <p className="text-base sm:text-lg font-black text-purple-400">{allPatternPredictions.length}</p>
                         </div>
                       </div>
+                      
                       {/* Close Button */}
                       <button
                         onClick={() => { setShowLeaderboard(false); setExpandedPattern(null); }}
-                        className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-800 border border-slate-700 text-slate-400 hover:text-white hover:border-purple-500/50 transition-all"
+                        className="w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl bg-slate-800 border border-slate-700 text-slate-400 hover:text-white hover:border-purple-500/50 transition-all flex-shrink-0"
                       >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
@@ -1575,151 +1646,153 @@ import {
                 </div>
                 
                 {/* Table Content - Scrollable */}
-                <div className="flex-1 overflow-y-auto p-6">
-                  <table className="w-full text-sm">
-                    <thead className="sticky top-0 bg-slate-900 z-10">
-                      <tr className="border-b border-slate-700">
-                        <th className="text-left py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">อันดับ</th>
-                        <th className="text-left py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">สูตร</th>
-                        <th className="text-center py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">เลขทำนาย</th>
-                        <th className="text-center py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">สถานะ</th>
-                        <th className="text-center py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Hist (30)</th>
-                        <th className="text-center py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Curr (10)</th>
-                        <th className="text-center py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Max Streak</th>
-                        <th className="text-center py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Stability</th>
-                        <th className="text-center py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">รายละเอียด</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {allPatternPredictions
-                        .sort((a, b) => {
-                          if (a.isActiveMaster && !b.isActiveMaster) return -1;
-                          if (!a.isActiveMaster && b.isActiveMaster) return 1;
-                          if (a.isQualified && !b.isQualified) return -1;
-                          if (!a.isQualified && b.isQualified) return 1;
-                          return b.historicalAccuracy - a.historicalAccuracy;
-                        })
-                        .map((pattern, idx) => (
-                          <tr 
-                            key={pattern.name}
-                            className={`border-b border-slate-800/50 transition-colors ${
-                              pattern.isActiveMaster 
-                                ? 'bg-emerald-500/10 hover:bg-emerald-500/15' 
-                                : pattern.isQualified
-                                ? 'bg-slate-900/30 hover:bg-slate-900/50'
-                                : 'hover:bg-slate-900/30'
-                            }`}
-                          >
-                            <td className="py-3 px-4">
-                              <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-black text-sm ${
+                <div className="flex-1 overflow-auto p-2 sm:p-6">
+                  <div className="min-w-[800px] sm:min-w-full">
+                    <table className="w-full text-sm">
+                      <thead className="sticky top-0 bg-slate-900 z-10">
+                        <tr className="border-b border-slate-700">
+                          <th className="text-left py-3 px-2 sm:px-4 text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-widest">อันดับ</th>
+                          <th className="text-left py-3 px-2 sm:px-4 text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-widest">สูตร</th>
+                          <th className="text-center py-3 px-2 sm:px-4 text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-widest">เลขทำนาย</th>
+                          <th className="text-center py-3 px-2 sm:px-4 text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-widest">สถานะ</th>
+                          <th className="text-center py-3 px-2 sm:px-4 text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-widest">Hist (30)</th>
+                          <th className="text-center py-3 px-2 sm:px-4 text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-widest">Curr (10)</th>
+                          <th className="text-center py-3 px-2 sm:px-4 text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-widest">Max Streak</th>
+                          <th className="text-center py-3 px-2 sm:px-4 text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-widest">Stability</th>
+                          <th className="text-center py-3 px-2 sm:px-4 text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-widest">รายละเอียด</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {allPatternPredictions
+                          .sort((a, b) => {
+                            if (a.isActiveMaster && !b.isActiveMaster) return -1;
+                            if (!a.isActiveMaster && b.isActiveMaster) return 1;
+                            if (a.isQualified && !b.isQualified) return -1;
+                            if (!a.isQualified && b.isQualified) return 1;
+                            return b.historicalAccuracy - a.historicalAccuracy;
+                          })
+                          .map((pattern, idx) => (
+                            <tr 
+                              key={pattern.name}
+                              className={`border-b border-slate-800/50 transition-colors ${
                                 pattern.isActiveMaster 
-                                  ? 'bg-emerald-500 text-slate-950' 
+                                  ? 'bg-emerald-500/10 hover:bg-emerald-500/15' 
                                   : pattern.isQualified
-                                  ? 'bg-cyan-500/20 text-cyan-400'
-                                  : 'bg-slate-800 text-slate-500'
-                              }`}>
-                                {idx + 1}
-                              </div>
-                            </td>
-                            <td className="py-3 px-4">
-                              <div className={`font-black text-sm ${
-                                pattern.isActiveMaster 
-                                  ? 'text-emerald-400' 
-                                  : pattern.isQualified
-                                  ? 'text-cyan-300'
-                                  : 'text-slate-400'
-                              }`}>
-                                {pattern.name}
-                              </div>
-                            </td>
-                            <td className="py-3 px-4 text-center">
-                              <div className="flex flex-col items-center gap-1">
-                                <div className={`inline-flex items-center justify-center w-16 h-10 rounded-lg font-black text-lg ${
-                                  pattern.isRecentlyDrawn
-                                    ? 'bg-red-500/30 border-2 border-red-500/50 text-red-400'
-                                    : 'bg-slate-800 text-white'
+                                  ? 'bg-slate-900/30 hover:bg-slate-900/50'
+                                  : 'hover:bg-slate-900/30'
+                              }`}
+                            >
+                              <td className="py-3 px-2 sm:px-4">
+                                <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center font-black text-xs sm:text-sm ${
+                                  pattern.isActiveMaster 
+                                    ? 'bg-emerald-500 text-slate-950' 
+                                    : pattern.isQualified
+                                    ? 'bg-cyan-500/20 text-cyan-400'
+                                    : 'bg-slate-800 text-slate-500'
                                 }`}>
-                                  {pattern.prediction}
+                                  {idx + 1}
                                 </div>
-                                {pattern.isRecentlyDrawn && (
-                                  <span className="text-[8px] font-black text-red-400 uppercase tracking-tighter animate-pulse">
-                                    ⚠️ ออกแล้ว!
-                                  </span>
-                                )}
-                                {pattern.isRecentlyDrawn && (
-                                  <div className="flex gap-1 mt-1">
-                                    <span className="text-[8px] text-slate-500">ทางเลือก:</span>
-                                    <span className="text-[9px] font-black text-cyan-400">{pattern.mirrorNumber}</span>
+                              </td>
+                              <td className="py-3 px-2 sm:px-4">
+                                <div className={`font-black text-xs sm:text-sm ${
+                                  pattern.isActiveMaster 
+                                    ? 'text-emerald-400' 
+                                    : pattern.isQualified
+                                    ? 'text-cyan-300'
+                                    : 'text-slate-400'
+                                }`}>
+                                  {pattern.name}
+                                </div>
+                              </td>
+                              <td className="py-3 px-2 sm:px-4 text-center">
+                                <div className="flex flex-col items-center gap-1">
+                                  <div className={`inline-flex items-center justify-center w-14 sm:w-16 h-8 sm:h-10 rounded-lg font-black text-base sm:text-lg ${
+                                    pattern.isRecentlyDrawn
+                                      ? 'bg-red-500/30 border-2 border-red-500/50 text-red-400'
+                                      : 'bg-slate-800 text-white'
+                                  }`}>
+                                    {pattern.prediction}
+                                  </div>
+                                  {pattern.isRecentlyDrawn && (
+                                    <span className="text-[7px] sm:text-[8px] font-black text-red-400 uppercase tracking-tighter animate-pulse">
+                                      ⚠️ ออกแล้ว!
+                                    </span>
+                                  )}
+                                  {pattern.isRecentlyDrawn && (
+                                    <div className="flex gap-1 mt-0.5 sm:mt-1">
+                                      <span className="text-[7px] sm:text-[8px] text-slate-500">Mirror:</span>
+                                      <span className="text-[8px] sm:text-[9px] font-black text-cyan-400">{pattern.mirrorNumber}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="py-3 px-2 sm:px-4 text-center">
+                                {pattern.isActiveMaster ? (
+                                  <div className="inline-flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-emerald-500/20 border border-emerald-500/30 animate-pulse">
+                                    <span className="text-xl sm:text-2xl" title="Active Master">👑</span>
+                                  </div>
+                                ) : pattern.isQualified ? (
+                                  <div className="inline-flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+                                    <span className="text-lg sm:text-xl text-emerald-400 font-black" title="Qualified">✓</span>
+                                  </div>
+                                ) : (
+                                  <div className="inline-flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-red-500/10 border border-red-500/20">
+                                    <span className="text-lg sm:text-xl text-red-400 font-black" title="Unstable">✗</span>
                                   </div>
                                 )}
-                              </div>
-                            </td>
-                            <td className="py-3 px-4 text-center">
-                              {pattern.isActiveMaster ? (
-                                <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-emerald-500/20 border border-emerald-500/30 animate-pulse">
-                                  <span className="text-2xl" title="Active Master">👑</span>
+                              </td>
+                              <td className="py-3 px-2 sm:px-4 text-center">
+                                <div className={`text-xs sm:text-sm font-black ${
+                                  pattern.historicalAccuracy >= 10 ? 'text-emerald-400' : 
+                                  pattern.historicalAccuracy >= 5 ? 'text-amber-400' : 'text-slate-400'
+                                }`}>
+                                  {pattern.historicalAccuracy.toFixed(1)}%
                                 </div>
-                              ) : pattern.isQualified ? (
-                                <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-emerald-500/10 border border-emerald-500/20">
-                                  <span className="text-xl text-emerald-400 font-black" title="Qualified">✓</span>
+                              </td>
+                              <td className="py-3 px-2 sm:px-4 text-center">
+                                <div className={`text-xs sm:text-sm font-black ${
+                                  pattern.currentAccuracy >= 10 ? 'text-emerald-400' : 
+                                  pattern.currentAccuracy >= 5 ? 'text-amber-400' : 'text-slate-400'
+                                }`}>
+                                  {pattern.currentAccuracy.toFixed(1)}%
                                 </div>
-                              ) : (
-                                <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-red-500/10 border border-red-500/20">
-                                  <span className="text-xl text-red-400 font-black" title="Unstable">✗</span>
+                              </td>
+                              <td className="py-3 px-2 sm:px-4 text-center">
+                                <div className={`text-xs sm:text-sm font-black ${
+                                  pattern.maxConsecutive >= 6 ? 'text-emerald-400' : 
+                                  pattern.maxConsecutive >= 4 ? 'text-amber-400' : 'text-red-400'
+                                }`}>
+                                  {pattern.maxConsecutive}
                                 </div>
-                              )}
-                            </td>
-                            <td className="py-3 px-4 text-center">
-                              <div className={`text-sm font-black ${
-                                pattern.historicalAccuracy >= 10 ? 'text-emerald-400' : 
-                                pattern.historicalAccuracy >= 5 ? 'text-amber-400' : 'text-slate-400'
-                              }`}>
-                                {pattern.historicalAccuracy.toFixed(1)}%
-                              </div>
-                            </td>
-                            <td className="py-3 px-4 text-center">
-                              <div className={`text-sm font-black ${
-                                pattern.currentAccuracy >= 10 ? 'text-emerald-400' : 
-                                pattern.currentAccuracy >= 5 ? 'text-amber-400' : 'text-slate-400'
-                              }`}>
-                                {pattern.currentAccuracy.toFixed(1)}%
-                              </div>
-                            </td>
-                            <td className="py-3 px-4 text-center">
-                              <div className={`text-sm font-black ${
-                                pattern.maxConsecutive >= 6 ? 'text-emerald-400' : 
-                                pattern.maxConsecutive >= 4 ? 'text-amber-400' : 'text-red-400'
-                              }`}>
-                                {pattern.maxConsecutive} งวด
-                              </div>
-                            </td>
-                            <td className="py-3 px-4 text-center">
-                              <div className="flex items-center justify-center gap-2">
-                                <div className="w-16 h-2 bg-slate-800 rounded-full overflow-hidden">
-                                  <div
-                                    className={`h-full transition-all duration-1000 ${
-                                      pattern.stabilityScore >= 70 ? 'bg-emerald-500' :
-                                      pattern.stabilityScore >= 50 ? 'bg-amber-500' :
-                                      'bg-red-500'
-                                    }`}
-                                    style={{ width: `${pattern.stabilityScore}%` }}
-                                  ></div>
+                              </td>
+                              <td className="py-3 px-2 sm:px-4 text-center">
+                                <div className="flex items-center justify-center gap-1 sm:gap-2">
+                                  <div className="w-12 sm:w-16 h-1.5 sm:h-2 bg-slate-800 rounded-full overflow-hidden">
+                                    <div
+                                      className={`h-full transition-all duration-1000 ${
+                                        pattern.stabilityScore >= 70 ? 'bg-emerald-500' :
+                                        pattern.stabilityScore >= 50 ? 'bg-amber-500' :
+                                        'bg-red-500'
+                                      }`}
+                                      style={{ width: `${pattern.stabilityScore}%` }}
+                                    ></div>
+                                  </div>
+                                  <span className="text-[10px] sm:text-xs font-black text-slate-500">{pattern.stabilityScore}%</span>
                                 </div>
-                                <span className="text-xs font-black text-slate-500">{pattern.stabilityScore}%</span>
-                              </div>
-                            </td>
-                            <td className="py-3 px-4 text-center">
-                              <button
-                                onClick={() => setExpandedPattern(expandedPattern === pattern.name ? null : pattern.name)}
-                                className="px-3 py-1 bg-purple-500/20 hover:bg-purple-500/30 text-purple-400 border border-purple-500/20 rounded text-[9px] font-black uppercase tracking-tighter transition-colors"
-                              >
-                                {expandedPattern === pattern.name ? '▲ ซ่อน' : '▼ ดู'}
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
+                              </td>
+                              <td className="py-3 px-2 sm:px-4 text-center">
+                                <button
+                                  onClick={() => setExpandedPattern(expandedPattern === pattern.name ? null : pattern.name)}
+                                  className="px-2 sm:px-3 py-1 bg-purple-500/20 hover:bg-purple-500/30 text-purple-400 border border-purple-500/20 rounded text-[8px] sm:text-[9px] font-black uppercase tracking-tighter transition-colors"
+                                >
+                                  {expandedPattern === pattern.name ? '▲ HIDE' : '▼ VIEW'}
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
 
                   {/* รายละเอียดขยายของแต่ละสูตร */}
                   {expandedPattern && (
@@ -2004,7 +2077,7 @@ import {
       </div>
 
       <footer className="text-center py-12 mt-12 border-t border-slate-900 text-[10px] font-black text-slate-600 tracking-[0.4em] uppercase">
-        TKK STUDIO ENTERPRISE • QUANTUM ENGINE v3.8 • {new Date().toLocaleDateString('th-TH')}
+        TKK STUDIO ENTERPRISE • QUANTUM ENGINE v5.0 • {new Date().toLocaleDateString('th-TH')}
       </footer>
     </div>
   );

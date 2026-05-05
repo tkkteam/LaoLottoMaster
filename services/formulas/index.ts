@@ -19,4 +19,5 @@ export { crossCorrelationFormula } from './crossCorrelation';
 export { adaptiveWeightFormula } from './adaptiveWeight';
 export { digitPairFrequencyFormula } from './digitPairFrequency';
 export { monteCarlo3DFormula } from './monteCarlo3D';
+export { unified3DEngine } from './deepLearning3D';
 export { unifiedQuantumEngine } from './unifiedQuantumEngine';

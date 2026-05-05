@@ -22,6 +22,7 @@ import {
   adaptiveWeightFormula,
   digitPairFrequencyFormula,
   monteCarlo3DFormula,
+  unified3DEngine,
   unifiedQuantumEngine
 } from './formulas';
 
@@ -324,7 +325,9 @@ export function analyzeRepeatProbability(
 
 export const fetchLottoData = async (): Promise<LottoResult[]> => {
   try {
-    const res = await fetch(CSV_URL);
+    // Add cache busting timestamp
+    const cacheBuster = `&t=${Date.now()}`;
+    const res = await fetch(CSV_URL + cacheBuster);
     if (!res.ok) throw new Error("Network response was not ok");
     const text = await res.text();
     const rows = text.trim().split('\n').slice(1);
@@ -349,13 +352,17 @@ export const fetchLottoData = async (): Promise<LottoResult[]> => {
     }).filter((i): i is LottoResult => !!(i && i.date && i.r2));
 
     console.log(`   Successfully parsed: ${parsedData.length} results`);
-    console.log(`   Date range: ${parsedData[0]?.date} to ${parsedData[parsedData.length - 1]?.date}`);
-    console.log(`   First 5 results:`, parsedData.slice(0, 5));
-    console.log(`   Last 5 results:`, parsedData.slice(-5));
-    
-    // Reverse to have oldest first for processing
-    return parsedData.reverse();
-  } catch (e) {
+    // The CSV has newest results at the bottom (May 2569)
+    // We want allData[0] to be the NEWEST result for the UI and AI
+    const sortedData = [...parsedData].reverse();
+
+    console.log(`   Data Order Check:`);
+    console.log(`   allData[0] (Newest): ${sortedData[0]?.date} - ${sortedData[0]?.r3}-${sortedData[0]?.r2}`);
+    console.log(`   allData[last] (Oldest): ${sortedData[sortedData.length-1]?.date}`);
+
+    return sortedData;
+    } catch (e) {
+
     console.error("Data Sync Error", e);
     return [];
   }
@@ -399,6 +406,7 @@ export const PATTERNS: Pattern[] = [
   adaptiveWeightFormula,
   digitPairFrequencyFormula,
   monteCarlo3DFormula,
+  unified3DEngine,
   unifiedQuantumEngine
 ];
 
@@ -427,6 +435,7 @@ export {
   adaptiveWeightFormula,
   digitPairFrequencyFormula,
   monteCarlo3DFormula,
+  unified3DEngine,
   unifiedQuantumEngine
 };
 
