@@ -53,9 +53,9 @@ export const monteCarlo3DFormula: Pattern = {
 
     const getMarkovProb = (a: string, b: string): number => {
       const map = transitions.get(a);
-      if (!map) return 0;
+      if (!map) return 0.05; // Fallback probability
       const total = Array.from(map.values()).reduce((sum, val) => sum + val, 0);
-      return (map.get(b) || 0) / total;
+      return (map.get(b) || 0) / (total || 1) || 0.05;
     };
 
     // 4. Monte Carlo Simulation
@@ -76,19 +76,31 @@ export const monteCarlo3DFormula: Pattern = {
 
     // Predict Top 30
     const candidates: Array<{ number: string, score: number }> = [];
+    const maxFreqCount = Math.max(...Array.from(freq.values()), 1);
+    
     for (let i = 0; i < 1000; i++) {
       const num = i.toString().padStart(3, "0");
       const digits = num.split("");
       let score = 0;
 
-      // Freq (35%)
-      digits.forEach(d => { score += (freq.get(d) || 0) * 0.35; });
-      // Recency (25%)
-      digits.forEach(d => { score += ((lastSeen.get(d) || 0) / totalDraws) * 0.25; });
-      // Markov (25%)
-      for (let j = 0; j < digits.length - 1; j++) { score += getMarkovProb(digits[j], digits[j+1]) * 0.25; }
+      // Freq (30% - Normalized)
+      let fScore = 0;
+      digits.forEach(d => { fScore += (freq.get(d) || 0) / maxFreqCount; });
+      score += (fScore / 3) * 0.30;
+
+      // Recency (25% - Normalized)
+      let rScore = 0;
+      digits.forEach(d => { rScore += (lastSeen.get(d) || 0) / totalDraws; });
+      score += (rScore / 3) * 0.25;
+
+      // Markov (30% - Probability)
+      let mScore = 0;
+      for (let j = 0; j < digits.length - 1; j++) { mScore += getMarkovProb(digits[j], digits[j+1]); }
+      score += (mScore / 2) * 0.30;
+
       // Monte (10%)
-      score += (monte.get(num) || 0) * 0.1;
+      score += ((monte.get(num) || 0) / (iterations / 100)) * 0.1;
+      
       // Pattern
       score *= getPatternScore(num);
 
@@ -127,26 +139,39 @@ export const monteCarlo3DFormula: Pattern = {
     });
 
     const getMarkovProb = (a: string, b: string): number => {
-      const map = transitions.get(a); if (!map) return 0;
+      const map = transitions.get(a); if (!map) return 0.05;
       const total = Array.from(map.values()).reduce((sum, val) => sum + val, 0);
-      return (map.get(b) || 0) / (total || 1);
+      return (map.get(b) || 0) / (total || 1) || 0.05;
     };
 
     const monte = new Map<string, number>();
-    for (let i = 0; i < 2000; i++) {
+    const iterations = 2000;
+    for (let i = 0; i < iterations; i++) {
       const num = Math.floor(Math.random() * 1000).toString().padStart(3, "0");
       monte.set(num, (monte.get(num) || 0) + 1);
     }
 
     const candidates: Array<{ number: string, score: number }> = [];
+    const maxFreqCount = Math.max(...Array.from(freq.values()), 1);
+
     for (let i = 0; i < 1000; i++) {
       const num = i.toString().padStart(3, "0");
       const digits = num.split("");
       let score = 0;
-      digits.forEach(d => { score += (freq.get(d) || 0) * 0.35; });
-      digits.forEach(d => { score += ((lastSeen.get(d) || 0) / totalDraws) * 0.25; });
-      for (let j = 0; j < digits.length - 1; j++) { score += getMarkovProb(digits[j], digits[j+1]) * 0.25; }
-      score += (monte.get(num) || 0) * 0.1;
+      
+      let fScore = 0;
+      digits.forEach(d => { fScore += (freq.get(d) || 0) / maxFreqCount; });
+      score += (fScore / 3) * 0.30;
+
+      let rScore = 0;
+      digits.forEach(d => { rScore += (lastSeen.get(d) || 0) / totalDraws; });
+      score += (rScore / 3) * 0.25;
+
+      let mScore = 0;
+      for (let j = 0; j < digits.length - 1; j++) { mScore += getMarkovProb(digits[j], digits[j+1]); }
+      score += (mScore / 2) * 0.30;
+
+      score += ((monte.get(num) || 0) / (iterations / 100)) * 0.1;
       
       // Pattern Score (Penalty)
       if (/(\d)\1{2}/.test(num)) score *= 0.5;

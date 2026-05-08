@@ -49,10 +49,10 @@ export class LotteryAI {
           loss: 'categoricalCrossentropy',
           metrics: ['accuracy'],
         });
-        console.log('🧠 Neural AI: Loaded existing model from memory');
+        
         return;
       } catch (e) {
-        console.log('🧠 Neural AI: No saved model found, starting fresh training');
+        
       }
     }
 
@@ -83,7 +83,7 @@ export class LotteryAI {
     // Save the model to IndexedDB
     try {
       await this.model.save('indexeddb://lottery-ai-model');
-      console.log('🧠 Neural AI: Model saved to memory successfully');
+      
     } catch (e) {
       console.error('🧠 Neural AI: Failed to save model', e);
     }

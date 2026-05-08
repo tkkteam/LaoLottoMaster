@@ -6,13 +6,12 @@ import {
 } from 'recharts';
 import {
   fetchLottoData,
+  CSV_URL,
   getDigitSum,
   getMirror,
   calculateBackyard,
-  backtestBackyard,
   backtestBackyardWithConstants,
-  findBestBackyardConstants,
-  backtestPattern,
+  type BackyardBacktestResult,
   findBestPattern,
   calculateCombinedConfidence,
   analyzeHybridPatterns,
@@ -23,8 +22,7 @@ import {
   unified3DEngine
   } from './services/lottoService';
 
-import { backtestHotnumber1 } from './services/hotnumber1Backtest';
-import { getHotDigits as getHotNumber1Digits } from './services/formulas/Hotnumber1';
+import { LaoLotteryAnalyzer } from './services/LaoLotteryAnalyzer';
 import { neuralAI } from './services/neuralAIService';
 
   import { LottoResult, PredictionResult, BacktestResult, Pattern, HybridPatternInfo, RepeatAnalysis, RunningDigitLog } from './types';
@@ -36,7 +34,6 @@ import { neuralAI } from './services/neuralAIService';
     parityData: Array<{ name: string, value: number }>;
     backyard: string[];
     aiMaster: string;
-    runningDigits: number[];
   }
 
   const COLORS = ['#22d3ee', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899'];
@@ -47,69 +44,30 @@ import { neuralAI } from './services/neuralAIService';
   const [yearFilter, setYearFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [manualRes, setManualRes] = useState<PredictionResult | null>(null);
-  const [bestPatternInfo, setBestPatternInfo] = useState<{ pattern: Pattern, stats: BacktestResult } | null>(null);
+  const [bestPatternInfo, setBestPatternInfo] = useState<{ pattern: Pattern } | null>(null);
   const [hybridPatterns, setHybridPatterns] = useState<Array<HybridPatternInfo>>([]);
   const [repeatAnalysis, setRepeatAnalysis] = useState<RepeatAnalysis | null>(null);
-  const [showRunningLogs, setShowRunningLogs] = useState(false);
-  const [showExplanation, setShowExplanation] = useState(false);
+  const [autoSet, setAutoSet] = useState<any>(null);
+  const [autoSetLogs, setAutoSetLogs] = useState<any>(null);
+  const [showAutoSetLogs, setShowAutoSetLogs] = useState(false);
+  const [backyardBacktest, setBackyardBacktest] = useState<BackyardBacktestResult | null>(null);
   const [showBackyardLogs, setShowBackyardLogs] = useState(false);
-  const [backyardBacktest, setBackyardBacktest] = useState<import('./services/lottoService').BackyardBacktestResult | null>(null);
-  const [backyardConstants, setBackyardConstants] = useState<{ a: number; b: number; c: number }>({ a: 6, b: 7, c: 1 });
-  const [isHot1Enabled, setIsHot1Enabled] = useState(false);
+  const [allPatternPredictions, setAllPatternPredictions] = useState<any[]>([]);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [expandedPattern, setExpandedPattern] = useState<string | null>(null);
+  const [showExplanation, setShowExplanation] = useState(false);
+  const [finalSelection, setFinalSelection] = useState<any[]>([]);
 
   // NEW: Neural AI Prediction
   const [neuralPrediction, setNeuralPrediction] = useState<{ prediction: string, confidence: number } | null>(null);
   const [isTraining, setIsTraining] = useState(false);
-
-  // NEW: Running Digits 30-Draw Statistics
-  const [runningDigitsStats, setRunningDigitsStats] = useState<{
-    history: Array<import('./types').RunningDigitLog>;
-    correct: number;
-    incorrect: number;
-    accuracy: number;
-    currentStreak: number;
-    bestStreak: number;
-  }>({
-    history: [],
-    correct: 0,
-    incorrect: 0,
-    accuracy: 0,
-    currentStreak: 0,
-    bestStreak: 0
-  });
-
-  // NEW: Algorithm Leaderboard - เก็บเลขทำนายของทุกสูตร
-  const [allPatternPredictions, setAllPatternPredictions] = useState<Array<{
-    name: string;
-    prediction: string;
-    isQualified: boolean;
-    isActiveMaster: boolean;
-    historicalAccuracy: number;
-    currentAccuracy: number;
-    maxConsecutive: number;
-    stabilityScore: number;
-    isRecentlyDrawn: boolean;       // NEW: เลขนี้ออกในงวดล่าสุดหรือไม่
-    lastDrawnDate: string;          // NEW: วันที่ออกครั้งล่าสุด
-    mirrorNumber: string;           // NEW: เลขกระจก
-    runningDigits: number[];        // NEW: Running digits
-  }>>([]);
-  const [showLeaderboard, setShowLeaderboard] = useState(false);
-  const [expandedPattern, setExpandedPattern] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
   }, []);
 
   const stats = useMemo<StatsResult | null>(() => {
-    if (allData.length === 0) return {
-      topT: [],
-      topU: [],
-      chartData: [],
-      parityData: [],
-      backyard: [],
-      aiMaster: '',
-      runningDigits: []
-    };
+    if (allData.length === 0) return null;
     const range = allData;
     const tens: Record<string, number> = {};
     const units: Record<string, number> = {};
@@ -138,62 +96,13 @@ import { neuralAI } from './services/neuralAIService';
       allData
     ).toString().padStart(2, '0');
 
-    // คำนวณเลขเด่นจาก 21 สูตร - แบบไดนามิก (ไม่เกิน 4 ตัว)
-    const digitFreq = Array(10).fill(0);
-    PATTERNS.forEach(p => {
-      try {
-        const pred = p.calc(
-          allData.length >= 2 ? parseInt(allData[1].r2, 10) : 0,
-          parseInt(lastResult.r2, 10),
-          lastResult.r4,
-          allData
-        ).toString().padStart(2, '0');
-        digitFreq[parseInt(pred[0], 10)]++;
-        digitFreq[parseInt(pred[1], 10)]++;
-      } catch (e) {}
-    });
-
-    // NEW: Recency Penalty for Running Digits
-    // หักคะแนนเลขที่เพิ่งออกไปใน 2 งวดล่าสุด เพื่อให้เลขเด่นเปลี่ยนชุด
-    const recentDigits = new Set([
-      ...allData[0].r2.split('').map(d => parseInt(d, 10)),
-      ...(allData[1]?.r2.split('').map(d => parseInt(d, 10)) || [])
-    ]);
-
-    const sortedDigits = digitFreq
-      .map((freq, digit) => {
-        let finalFreq = freq;
-        if (recentDigits.has(digit)) finalFreq *= 0.5; // หักคะแนนเลขเพิ่งออก 50%
-        return { digit, freq: finalFreq };
-      })
-      .sort((a, b) => b.freq - a.freq);
-    
-    // เลือกเลขเด่นแบบไดนามิก: ใช้ threshold 60% ของความถี่สูงสุด
-    const maxFreq = sortedDigits[0]?.freq || 1;
-    const threshold = maxFreq * 0.6;
-    const selectedDigits = sortedDigits
-      .filter(d => d.freq >= threshold)
-      .slice(0, 4)
-      .map(x => x.digit);
-    
-    const runningDigits = selectedDigits.length > 0 ? selectedDigits : sortedDigits.slice(0, 2).map(x => x.digit);
-
-    // ✅ CONDITIONAL INTEGRATION: Hotnumber1 (ถ้าถูกเกิน 20/30 งวด)
-    let finalRunningDigits = [...runningDigits];
-    if (isHot1Enabled) {
-      const hot1Digits = getHotNumber1Digits(allData).slice(0, 3).map(d => parseInt(d.digit, 10));
-      // รวมเลขจาก Hotnumber1 เข้าไป (ไม่ซ้ำ)
-      finalRunningDigits = Array.from(new Set([...finalRunningDigits, ...hot1Digits])).sort((a, b) => a - b);
-    }
-
     return {
       topT, topU, chartData,
       parityData: [{ name: 'คู่', value: even }, { name: 'คี่', value: odd }],
-      backyard: calculateBackyard(lastResult.r3, lastResult.r4, backyardConstants),
-      aiMaster: aiMasterNum,
-      runningDigits: finalRunningDigits
+      backyard: calculateBackyard(lastResult.r3, lastResult.r2),
+      aiMaster: aiMasterNum
     };
-  }, [allData, bestPatternInfo, backyardConstants]);
+  }, [allData, bestPatternInfo]);
 
   useEffect(() => {
     if (allData.length >= 2 && stats && hybridPatterns.length > 0) {
@@ -221,31 +130,12 @@ import { neuralAI } from './services/neuralAIService';
     setIsTraining(false);
   };
 
-  // Recalculate Running Digits stats when data changes
-  useEffect(() => {
-    if (allData.length >= 2) {
-      calculateRunningDigitsStats(allData);
-    }
-  }, [allData]);
-
   // Recalculate Backyard Backtest when data changes
   useEffect(() => {
     if (allData.length >= 2) {
-      // หา constant ที่ดีที่สุดจากข้อมูล 70% แรก (train set) - optimize สำหรับ running accuracy
-      const trainSize = Math.floor(allData.length * 0.7);
-      const trainData = allData.slice(allData.length - trainSize);
-      const best = findBestBackyardConstants(trainData, Math.min(100, trainData.length));
-      setBackyardConstants(best.constants);
-      console.log(`   🎯 Optimized Constants: a=${best.constants.a}, b=${best.constants.b}, c=${best.constants.c}`);
-      console.log(`   Train Running Accuracy: ${best.runningAccuracy.toFixed(1)}%`);
-
-      // ทดสอบกับข้อมูล 30% ล่าสุด (test set)
-      const bt = backtestBackyardWithConstants(allData, 30, best.constants);
+      // เรียกใช้ระบบ Backtest เวอร์ชั่นใหม่ (Pure Function)
+      const bt = backtestBackyardWithConstants(allData, 30);
       setBackyardBacktest(bt);
-      console.log(`   🏡 Backyard Backtest (30 rounds):`);
-      console.log(`     Exact: ${bt.accuracy.toFixed(1)}% (${bt.hits}/${bt.totalRounds})`);
-      console.log(`     Running: ${bt.runningAccuracy.toFixed(1)}% (${bt.runningHits}/${bt.totalRounds})`);
-      console.log(`     Best Streak: ${bt.streak.best} | Running Best: ${bt.runningStreak.best}`);
     }
   }, [allData]);
 
@@ -254,23 +144,41 @@ import { neuralAI } from './services/neuralAIService';
     const data = await fetchLottoData();
     setAllData(data);
 
-    if (data.length > 30) {
-      // BACKTEST HOTNUMBER1 - วิเคราะห์ย้อนหลัง 30 งวด
-      const hot1Bt = backtestHotnumber1(data, 30);
-      if (hot1Bt) {
-        console.log(`\n🔥 HOTNUMBER1 BACKTEST (30 Rounds):`);
-        console.log(`   Hits: ${hot1Bt.hits}/30 (${hot1Bt.accuracy.toFixed(1)}%)`);
-        
-        // ถ้าถูกเกิน 20 งวด ให้เปิดใช้งานระบบเสริม
-        if (hot1Bt.hits >= 20) {
-          console.log(`   ✅ CRITERIA MET: Integrating Hotnumber1 into Daily Running Digits`);
-          setIsHot1Enabled(true);
-        } else {
-          console.log(`   ❌ CRITERIA NOT MET: Using Standard Ensemble only`);
-          setIsHot1Enabled(false);
-        }
-      }
+    // ✅ Lao Lottery Analyzer Integration
+    try {
+      const analyzer = new LaoLotteryAnalyzer(CSV_URL);
+      await analyzer.load();
+      setAutoSet(analyzer.generateAutoSet());
+      setAutoSetLogs(analyzer.backtest(30)); // เก็บ Log ย้อนหลัง 30 งวด
+      setFinalSelection(analyzer.selectFinalSet({ min: 3, max: 6 })); // คัด 3-6 คู่
+      
+      // ✅ 1. ค้นหาสูตรที่ดีที่สุดจากการ Backtest ย้อนหลัง (ใช้ Logic จาก Hybrid Patterns)
+      const hybrid = analyzeHybridPatterns(data, undefined, 30);
+      setHybridPatterns(hybrid);
+      
+      // หาสูตรที่มี Accuracy รวมสูงสุด (Direct + Running)
+      const bestHybrid = [...hybrid].sort((a, b) => {
+        const scoreA = a.historicalStats.directAccuracy + (a.historicalStats.runningAccuracy * 0.5);
+        const scoreB = b.historicalStats.directAccuracy + (b.historicalStats.runningAccuracy * 0.5);
+        return scoreB - scoreA;
+      })[0];
 
+      if (bestHybrid) {
+        // ใช้คำทำนายจากสูตรที่ดีที่สุด
+        const lastResult = data[0];
+        const prevResult = data[1];
+        const pred = bestHybrid.pattern.calc(
+          parseInt(prevResult.r2, 10),
+          parseInt(lastResult.r2, 10),
+          lastResult.r4,
+          data
+        ).toString().padStart(2, '0');
+      }
+    } catch (e) {
+      console.error('Lao Lottery Analyzer Error:', e);
+    }
+
+    if (data.length > 30) {
       // HYBRID ANALYSIS - ต้องทำก่อน เพื่อเลือก Active Master ที่ถูกต้อง
       const hybrid = analyzeHybridPatterns(data, undefined, 4); // ครั้งแรกไม่มี currentMaster
       setHybridPatterns(hybrid);
@@ -297,132 +205,14 @@ import { neuralAI } from './services/neuralAIService';
     setLoading(false);
   };
 
-  // NEW: Function to calculate Running Digits 30-Draw Statistics
-  const calculateRunningDigitsStats = (data: LottoResult[]) => {
-    if (data.length < 2) return;
-
-    // Calculate hot digits from all 21 formulas
-    const getHotDigits = (results: LottoResult[]): number[] => {
-      if (results.length < 2) return [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
-      const lastResult = results[0];
-      const prevResult = results[1];
-      const prevR2 = parseInt(prevResult.r2, 10);
-      const lastR2Num = parseInt(lastResult.r2, 10);
-      const digitFreq = Array(10).fill(0);
-      PATTERNS.forEach(p => {
-        try {
-          const pred = p.calc(prevR2, lastR2Num, lastResult.r4, results).toString().padStart(2, '0');
-          digitFreq[parseInt(pred[0], 10)]++;
-          digitFreq[parseInt(pred[1], 10)]++;
-        } catch (e) {}
-      });
-      const sortedDigits = digitFreq
-        .map((freq, digit) => ({ digit, freq }))
-        .sort((a, b) => b.freq - a.freq);
-      
-      // เลือกเลขเด่นแบบไดนามิก: ใช้ threshold 60% ของความถี่สูงสุด
-      const maxFreq = sortedDigits[0]?.freq || 1;
-      const threshold = maxFreq * 0.6;
-      const selected = sortedDigits
-        .filter(d => d.freq >= threshold)
-        .slice(0, 4)
-        .map(x => x.digit);
-      
-      return selected.length > 0 ? selected : sortedDigits.slice(0, 2).map(x => x.digit);
-    };
-
-    const history: Array<import('./types').RunningDigitLog> = [];
-
-    let correct = 0;
-    let incorrect = 0;
-    let currentStreak = 0;
-    let bestStreak = 0;
-    let tempStreak = 0;
-
-    // เริ่มนับจากงวด 02/01/2569 ถึงปัจจุบัน
-    let startIndex = -1;
-    for (let i = 0; i < data.length; i++) {
-      if (data[i].date === '02/01/2569') {
-        startIndex = i;
-        break;
-      }
-    }
-
-    if (startIndex === -1) {
-      startIndex = 0;
-    }
-
-    // งวดที่กำลังจะมาถึง (Pending)
-    const nextHotDigits = getHotDigits(data);
-    history.push({
-      date: 'งวดถัดไป',
-      predicted: nextHotDigits,
-      actual: '--',
-      isCorrect: false,
-      matchedDigits: 0,
-      status: 'PENDING'
-    });
-
-    // ตรวจสอบทั้งหมดตั้งแต่งวด 02/01/2569 ถึงปัจจุบัน
-    const maxRounds = Math.min(startIndex, data.length - 1);
-
-    for (let i = 0; i <= maxRounds; i++) {
-      const current = data[i];
-      const prev = data[i + 1];
-
-      if (!current || !prev) continue;
-
-      const runningDigits = getHotDigits(data.slice(i));
-      const actualR2 = current.r2;
-      const actualTens = parseInt(actualR2[0], 10);
-      const actualUnits = parseInt(actualR2[1], 10);
-
-      const hasTens = runningDigits.includes(actualTens);
-      const hasUnits = runningDigits.includes(actualUnits);
-      const matchedDigits = (hasTens ? 1 : 0) + (hasUnits ? 1 : 0);
-
-      const isCorrect = matchedDigits > 0;
-
-      if (isCorrect) {
-        correct++;
-        tempStreak++;
-        bestStreak = Math.max(bestStreak, tempStreak);
-      } else {
-        incorrect++;
-        tempStreak = 0;
-      }
-
-      currentStreak = tempStreak;
-
-      history.push({
-        date: current.date,
-        predicted: runningDigits,
-        actual: actualR2,
-        isCorrect,
-        matchedDigits,
-        status: isCorrect ? 'WIN' : 'LOSS'
-      });
-    }
-
-    setRunningDigitsStats({
-      correct,
-      incorrect,
-      accuracy: (correct + incorrect) > 0 ? (correct / (correct + incorrect)) * 100 : 0,
-      currentStreak,
-      bestStreak,
-      history: history
-    });
-  };
-
   const autoCalculate = () => {
-    console.log('\n🔍 RE-ANALYZE clicked (V4 Adaptive Learning)');
     
     if (allData.length < 5) {
-      console.warn('   ❌ Not enough data for learning');
+      
       return;
     }
     if (!bestPatternInfo || !stats) {
-      console.warn('   ❌ Stats not ready');
+      
       return;
     }
 
@@ -447,7 +237,7 @@ import { neuralAI } from './services/neuralAIService';
     }
 
     // 2. PATTERN DISCOVERY (Self-Correction / Learning)
-    console.log('   🧠 Learning from recent 5 draws...');
+    
     const ruleBiases: Record<string, number> = {};
     
     PATTERNS.forEach(p => {
@@ -518,9 +308,7 @@ import { neuralAI } from './services/neuralAIService';
       .sort((a, b) => b[1] - a[1]);
     
     const resPri = sortedNumbers[0]?.[0] || allPredictions[0].value;
-    
-    console.log(`\n✅ SOLID BEST SELECTION (Ensemble V4): ${resPri}`);
-    
+
     const resNum = parseInt(resPri, 10);
 
     // ===== HOT DIGITS FROM ALL 21 FORMULAS (Dynamic, max 4) =====
@@ -680,232 +468,6 @@ import { neuralAI } from './services/neuralAIService';
                 </button>
               </div>
             </div>
-          </div>
-
-          {/* Main Highlights */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="glass-card !border-t-4 !border-t-emerald-500 relative overflow-hidden group">
-              <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
-                <svg className="w-24 h-24 text-emerald-500" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M5 2a1 1 0 011 1v1h1a1 1 0 010 2H6v1a1 1 0 01-2 0V6H3a1 1 0 110-2h1V3a1 1 0 011-1zm0 10a1 1 0 011 1v1h1a1 1 0 110 2H6v1a1 1 0 11-2 0v-1H3a1 1 0 110-2h1v-1a1 1 0 011-1zM12 2a1 1 0 01.967.744L14.146 7.2 17.5 9.134a1 1 0 010 1.732l-3.354 1.935-1.18 4.455a1 1 0 01-1.933 0L9.854 12.8 6.5 10.866a1 1 0 010-1.732l3.354-1.935 1.18-4.455A1 1 0 0112 2z" clipRule="evenodd" />
-                </svg>
-              </div>
-              <p className="section-title text-emerald-500">
-                <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
-                AI MASTER ({bestPatternInfo?.pattern.name || 'ANALYZING...'})
-              </p>
-              <div className="huge-text-display glow-emerald">{stats?.aiMaster}</div>
-              <div className="mt-4 flex justify-between items-center text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                <span>Confidence Level</span>
-                <span className="text-emerald-400">{bestPatternInfo?.stats.directAccuracy.toFixed(1)}% Direct</span>
-              </div>
-            </div>
-
-            {/* Running Digits Card */}
-            <div className="glass-card !border-t-4 !border-t-cyan-500 relative overflow-hidden group">
-              <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
-                <svg className="w-24 h-24 text-cyan-500" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" />
-                </svg>
-              </div>
-              <p className="section-title text-cyan-500">
-                <span className="w-2 h-2 bg-cyan-500 rounded-full animate-pulse"></span>
-                เลขเด่นประจำวัน
-              </p>
-              <div className="mt-6 grid grid-cols-5 gap-3">
-                {stats?.runningDigits.map((digit, idx) => (
-                  <div
-                    key={idx}
-                    className="aspect-square flex items-center justify-center bg-slate-900/60 rounded-xl border border-cyan-500/20 group-hover:border-cyan-500/40 transition-all"
-                  >
-                    <span className="text-2xl font-black text-white group-hover:text-cyan-400 group-hover:scale-110 transition-all">
-                      {digit}
-                    </span>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-4 flex justify-between items-center text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                <span>Alternative Numbers</span>
-                <span className="text-cyan-400">{stats?.runningDigits.length} digits</span>
-              </div>
-
-              <div className="mt-6 flex justify-center">
-                <button
-                  onClick={() => setShowRunningLogs(!showRunningLogs)}
-                  className={`px-4 py-2 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all ${
-                    showRunningLogs
-                      ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-lg shadow-cyan-500/30'
-                      : 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30 hover:bg-cyan-500/20'
-                  }`}
-                >
-                  {showRunningLogs ? '📖 HIDE DAILY LOGS' : '📋 VIEW DAILY LOGS'}
-                </button>
-              </div>
-
-              {/* RUNNING DIGITS CUMULATIVE STATISTICS */}
-              {runningDigitsStats.history.length > 0 && (
-                <div className="mt-6 pt-6 border-t border-cyan-500/20">
-                  <div className="flex flex-col gap-4">
-                    <p className="text-[10px] font-black text-cyan-500 uppercase tracking-widest text-center">
-                      📊 สถิติสะสมตั้งแต่วันที่ 02/01/2569 ถึงปัจจุบัน
-                    </p>
-                    <div className="flex items-center justify-around">
-                      <div className="text-center">
-                        <p className="text-[9px] font-black text-slate-600 uppercase mb-1">ถูก (ครั้ง)</p>
-                        <p className="text-2xl font-black text-emerald-400">{runningDigitsStats.correct}</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-[9px] font-black text-slate-600 uppercase mb-1">ผิด (ครั้ง)</p>
-                        <p className="text-2xl font-black text-red-400">{runningDigitsStats.incorrect}</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-[9px] font-black text-slate-600 uppercase mb-1">แม่นยำ</p>
-                        <p className="text-2xl font-black text-cyan-400">{runningDigitsStats.accuracy.toFixed(1)}%</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-            </div>
-
-            {/* DAILY LOGS MODAL OVERLAY */}
-            {showRunningLogs && (
-              <div className="fixed inset-0 z-[100] flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-300">
-                {/* Backdrop */}
-                <div
-                  className="absolute inset-0 bg-slate-950/90 backdrop-blur-md"
-                  onClick={() => setShowRunningLogs(false)}
-                ></div>
-
-                {/* Modal Content */}
-                <div className="relative w-full max-w-6xl max-h-[95vh] bg-slate-900 border border-cyan-500/30 rounded-2xl sm:rounded-3xl shadow-2xl shadow-cyan-500/10 overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
-                  {/* Header */}
-                  <div className="flex-shrink-0 p-4 sm:p-6 border-b border-cyan-500/20 bg-gradient-to-r from-cyan-500/10 to-transparent">
-                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                      <div className="w-full sm:w-auto">
-                        <h3 className="text-xl sm:text-2xl font-black text-white flex items-center gap-2 sm:gap-3">
-                          <span className="text-2xl sm:text-3xl">📋</span>
-                          <span className="whitespace-nowrap overflow-hidden text-ellipsis">DAILY LOGS</span>
-                        </h3>
-                        <p className="text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">
-                          สถิติย้อนหลัง <span className="text-cyan-400">{runningDigitsStats.history.length} งวด</span>
-                        </p>
-                      </div>
-
-                      <div className="flex items-center justify-between w-full sm:w-auto gap-3 sm:gap-4">
-                        {/* Stats Summary */}
-                        <div className="flex gap-2 sm:gap-4 flex-1 sm:flex-none">
-                          <div className="flex-1 sm:flex-none text-center px-2 sm:px-3 py-1 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
-                            <p className="text-[8px] sm:text-[9px] font-black text-slate-500 uppercase">ถูก</p>
-                            <p className="text-base sm:text-lg font-black text-emerald-400">{runningDigitsStats.correct}</p>
-                          </div>
-                          <div className="flex-1 sm:flex-none text-center px-2 sm:px-3 py-1 bg-red-500/10 rounded-lg border border-red-500/20">
-                            <p className="text-[8px] sm:text-[9px] font-black text-slate-500 uppercase">ผิด</p>
-                            <p className="text-base sm:text-lg font-black text-red-400">{runningDigitsStats.incorrect}</p>
-                          </div>
-                          <div className="flex-1 sm:flex-none text-center px-2 sm:px-3 py-1 bg-cyan-500/10 rounded-lg border border-cyan-500/20">
-                            <p className="text-[8px] sm:text-[9px] font-black text-slate-500 uppercase">แม่น</p>
-                            <p className="text-base sm:text-lg font-black text-cyan-400">{runningDigitsStats.accuracy.toFixed(1)}%</p>
-                          </div>
-                        </div>
-                        {/* Close Button */}
-                        <button
-                          onClick={() => setShowRunningLogs(false)}
-                          className="w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl bg-slate-800 border border-slate-700 text-slate-400 hover:text-white hover:border-cyan-500/50 transition-all"
-                        >
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Table Content - Scrollable */}
-                  <div className="flex-1 overflow-auto p-2 sm:p-6">
-                    <div className="min-w-[500px] sm:min-w-full">
-                      <table className="w-full text-sm">
-                        <thead className="sticky top-0 bg-slate-900 z-10">
-                          <tr className="border-b border-slate-700">
-                            <th className="text-left py-3 px-2 sm:px-4 text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-widest">วันที่</th>
-                            <th className="text-center py-3 px-2 sm:px-4 text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-widest">เลขเด่นที่คำนวณได้</th>
-                            <th className="text-center py-3 px-2 sm:px-4 text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-widest">ผลที่ออก</th>
-                            <th className="text-center py-3 px-2 sm:px-4 text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-widest">ผลลัพธ์</th>
-                            <th className="text-right py-3 px-2 sm:px-4 text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-widest">สถานะ</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {runningDigitsStats.history.map((log, idx) => (
-                            <tr
-                              key={idx}
-                              className={`border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors ${
-                                log.status === 'WIN' ? 'bg-emerald-500/5' : log.status === 'LOSS' ? 'bg-red-500/5' : ''
-                              }`}
-                            >
-                              <td className="py-3 px-2 sm:px-4">
-                                <span className={`font-black text-[11px] sm:text-sm ${log.status === 'PENDING' ? 'text-cyan-400 animate-pulse' : 'text-slate-400'}`}>
-                                  {log.date}
-                                </span>
-                              </td>
-                              <td className="py-3 px-2 sm:px-4 text-center">
-                                <div className="flex justify-center gap-1 sm:gap-2">
-                                  {log.predicted.map((d, i) => (
-                                    <span
-                                      key={i}
-                                      className={`w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-lg font-black text-xs sm:text-sm ${
-                                        log.status === 'WIN' && log.actual.includes(d.toString())
-                                          ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20 scale-110'
-                                          : 'bg-slate-800 text-white'
-                                      }`}
-                                    >
-                                      {d}
-                                    </span>
-                                  ))}
-                                </div>
-                              </td>
-                              <td className="py-3 px-2 sm:px-4 text-center">
-                                <span className={`text-base sm:text-lg font-black ${log.status === 'WIN' ? 'text-emerald-400' : 'text-slate-500'}`}>
-                                  {log.actual}
-                                </span>
-                              </td>
-                              <td className="py-3 px-2 sm:px-4 text-center">
-                                {log.status === 'WIN' ? (
-                                  <div className="flex flex-col items-center">
-                                    <span className="text-emerald-400 font-black text-[9px] sm:text-xs">MATCHED</span>
-                                    <span className="text-[8px] sm:text-[10px] text-slate-600 font-black">{log.matchedDigits} DIGITS</span>
-                                  </div>
-                                ) : log.status === 'LOSS' ? (
-                                  <span className="text-red-400 font-black text-[9px] sm:text-xs opacity-50">MISS</span>
-                                ) : (
-                                  <span className="text-cyan-400 font-black text-[9px] sm:text-xs animate-pulse">AWAITING...</span>
-                                )}
-                              </td>
-                              <td className="py-3 px-2 sm:px-4 text-right">
-                                {log.status === 'WIN' ? (
-                                  <span className="px-2 sm:px-3 py-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full text-[8px] sm:text-[10px] font-black uppercase tracking-widest">
-                                    WIN ✅
-                                  </span>
-                                ) : log.status === 'LOSS' ? (
-                                  <span className="px-2 sm:px-3 py-1 bg-red-500/20 text-red-400 border border-red-500/30 rounded-full text-[8px] sm:text-[10px] font-black uppercase tracking-widest">
-                                    LOSS ❌
-                                  </span>
-                                ) : (
-                                  <span className="px-2 sm:px-3 py-1 bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 rounded-full text-[8px] sm:text-[10px] font-black uppercase tracking-widest animate-pulse">
-                                    WAIT 🔄
-                                  </span>
-                                )}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
           </div>
 
           {/* REPEAT ANALYSIS */}
@@ -1144,6 +706,125 @@ import { neuralAI } from './services/neuralAIService';
             )}
           </section>
 
+          {/* Lao Lottery Analyzer - Auto Set */}
+          {autoSet && (
+            <section className="glass-card !border-l-8 !border-l-amber-500 !bg-amber-500/5">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-6">
+                <div>
+                  <h2 className="section-title text-amber-500 !mb-0">Auto Hybrid Formula (สูตรผสมอัตโนมัติ)</h2>
+                  <p className="text-[10px] text-slate-500 mt-1 font-black uppercase tracking-widest">Statistical Analysis & Mirror Logic</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                   {autoSetLogs && (
+                     <span className="px-2.5 py-1 bg-amber-500/10 border border-amber-500/30 rounded-lg text-[9px] font-black text-amber-500 uppercase">
+                       Accuracy: {autoSetLogs.accuracy.toFixed(1)}%
+                     </span>
+                   )}
+                   <button
+                     onClick={() => setShowAutoSetLogs(true)}
+                     className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/40 border border-amber-500/30 rounded-lg text-[9px] font-black text-amber-500 uppercase tracking-widest transition-all"
+                   >
+                     📋 VIEW LOG
+                   </button>
+                </div>
+              </div>
+
+              {/* AUTO HYBRID LOGS MODAL */}
+              {showAutoSetLogs && autoSetLogs && (
+                <div className="fixed inset-0 z-[120] flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-300">
+                  <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-md" onClick={() => setShowAutoSetLogs(false)}></div>
+                  <div className="relative w-full max-w-5xl max-h-[90vh] bg-slate-900 border border-amber-500/30 rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
+                    <div className="p-6 border-b border-amber-500/20 bg-amber-500/5 flex justify-between items-center">
+                      <div>
+                        <h3 className="text-xl font-black text-white">📋 AUTO HYBRID LOGS</h3>
+                        <p className="text-[10px] font-black text-amber-500 uppercase tracking-widest mt-1">
+                          สถิติทดสอบย้อนหลัง {autoSetLogs.total} งวด | แม่นยำ {autoSetLogs.accuracy.toFixed(1)}%
+                        </p>
+                      </div>
+                      <button onClick={() => setShowAutoSetLogs(false)} className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all">
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                      </button>
+                    </div>
+                    <div className="flex-1 overflow-auto p-6">
+                      <table className="w-full text-sm">
+                        <thead className="sticky top-0 bg-slate-900 z-10">
+                          <tr className="border-b border-slate-700">
+                            <th className="text-left py-3 text-[10px] font-black text-slate-500 uppercase">งวดวันที่</th>
+                            <th className="text-left py-3 text-[10px] font-black text-slate-500 uppercase">ชุดตัวเลขที่ทำนาย</th>
+                            <th className="text-center py-3 text-[10px] font-black text-slate-500 uppercase">ผลออก</th>
+                            <th className="text-right py-3 text-[10px] font-black text-slate-500 uppercase">สถานะ</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {autoSetLogs.logs.map((log: any, idx: number) => (
+                            <tr key={idx} className={`border-b border-slate-800/50 hover:bg-slate-800/30 ${log.isHit ? 'bg-emerald-500/5' : ''}`}>
+                              <td className="py-4 font-black text-slate-400">{log.date}</td>
+                              <td className="py-4">
+                                <div className="flex flex-wrap gap-1.5 max-w-md">
+                                  {log.predicted.map((p: number, i: number) => (
+                                    <span key={i} className={`px-2 py-0.5 rounded text-[11px] font-black ${log.actual === p.toString().padStart(2, '0') ? 'bg-amber-500 text-slate-900' : 'bg-slate-800 text-slate-400'}`}>
+                                      {p.toString().padStart(2, '0')}
+                                    </span>
+                                  ))}
+                                </div>
+                              </td>
+                              <td className="py-4 text-center text-lg font-black text-white">{log.actual}</td>
+                              <td className="py-4 text-right">
+                                {log.isHit ? (
+                                  <span className="px-3 py-1 bg-emerald-500/20 text-emerald-400 rounded-full text-[10px] font-black">HIT 🎯</span>
+                                ) : (
+                                  <span className="px-3 py-1 bg-red-500/10 text-red-500/50 rounded-full text-[10px] font-black">MISS</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-4 bg-slate-950/40 rounded-2xl border border-amber-500/10">
+                  <p className="text-[10px] font-black text-amber-500/60 uppercase tracking-widest mb-3 text-center">Main Candidates (เลขเด่น)</p>
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {autoSet.candidate2Digits.map((num: number, i: number) => (
+                      <div key={i} className="w-10 h-10 flex items-center justify-center bg-amber-500/10 rounded-lg text-lg font-black text-slate-300 border border-amber-500/10">
+                        {num.toString().padStart(2, '0')}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="p-4 bg-slate-950/40 rounded-2xl border border-amber-500/10">
+                  <p className="text-[10px] font-black text-amber-500/60 uppercase tracking-widest mb-3 text-center">Mirror Sets (เลขกลับ)</p>
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {autoSet.mirrorCandidates.map((num: number, i: number) => (
+                      <div key={i} className="w-10 h-10 flex items-center justify-center bg-slate-900 rounded-lg text-lg font-black text-slate-500 border border-slate-800">
+                        {num.toString().padStart(2, '0')}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 p-6 bg-gradient-to-br from-amber-500 to-amber-600 rounded-[2rem] shadow-lg shadow-amber-500/20">
+                <p className="text-[10px] font-black text-amber-950 uppercase tracking-[0.3em] mb-4 text-center">Top Tier Selection (คัดพิเศษ 3-6 คู่)</p>
+                <div className="flex flex-wrap justify-center gap-4">
+                  {finalSelection.map((item: any, i: number) => (
+                    <div key={i} className="flex flex-col items-center bg-amber-950/20 p-3 rounded-2xl min-w-[70px] border border-white/10">
+                      <span className="text-3xl font-black text-white glow-white">
+                        {item.number.toString().padStart(2, '0')}
+                      </span>
+                      <span className="text-[9px] font-black text-amber-900 mt-1 uppercase">Score: {item.score}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+          )}
+
           {/* Engine */}
           <section className="glass-card bg-gradient-to-br from-slate-900/60 to-slate-900/40">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
@@ -1176,19 +857,10 @@ import { neuralAI } from './services/neuralAIService';
 
             {manualRes && (
               <div className="space-y-8">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 gap-6">
                   <div className="p-8 bg-slate-950/60 rounded-[2.5rem] border border-blue-500/20 shadow-inner group">
                     <p className="text-center text-[10px] font-black text-blue-400 uppercase tracking-[0.3em] mb-4">AI 3-Digit Target</p>
                     <div className="ultra-huge-text glow-blue group-hover:scale-105 transition-transform duration-500">{manualRes.triple}</div>
-                  </div>
-                  <div className="p-8 bg-slate-950/60 rounded-[2.5rem] border border-cyan-500/20 shadow-inner group">
-                    <p className="text-center text-[10px] font-black text-cyan-400 uppercase tracking-[0.3em] mb-4">เลขเด่นประจำวัน</p>
-                    <div className="flex justify-center gap-4">
-                      {stats?.runningDigits.map((digit, idx) => (
-                        <div key={idx} className="ultra-huge-text glow-cyan group-hover:-translate-x-2 transition-transform duration-500">{digit}</div>
-                      ))}
-                    </div>
-                    <p className="text-center text-[10px] font-black text-cyan-400 mt-2">{stats?.runningDigits.length} DIGITS</p>
                   </div>
                 </div>
 
