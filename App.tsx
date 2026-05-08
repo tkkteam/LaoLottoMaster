@@ -206,13 +206,14 @@ import { neuralAI } from './services/neuralAIService';
   };
 
   const autoCalculate = () => {
+    console.log('🚀 Quantum Engine: Starting auto-calculation...');
     
     if (allData.length < 5) {
-      
+      console.warn('⚠️ Quantum Engine: Insufficient data for calculation (need >= 5 rows)');
       return;
     }
     if (!bestPatternInfo || !stats) {
-      
+      console.warn('⚠️ Quantum Engine: Missing bestPatternInfo or stats');
       return;
     }
 
@@ -227,6 +228,7 @@ import { neuralAI } from './services/neuralAIService';
     const lastR3 = lastResult.r3;
 
     const activePattern = bestPatternInfo.pattern;
+    console.log(`📡 Active Master Formula: ${activePattern.name}`);
 
     // 1. Gap Analysis
     const numberGaps: Record<string, number> = {};
@@ -264,6 +266,8 @@ import { neuralAI } from './services/neuralAIService';
         return { name: p.name, value: '00' };
       }
     });
+
+    console.log(`📊 Total Patterns Analyzed: ${allPredictions.length}`);
 
     // 4. ENSEMBLE SCORING V4 (Deterministic)
     const lastR2Str = lastResult.r2.padStart(2, '0');
@@ -308,6 +312,7 @@ import { neuralAI } from './services/neuralAIService';
       .sort((a, b) => b[1] - a[1]);
     
     const resPri = sortedNumbers[0]?.[0] || allPredictions[0].value;
+    console.log(`✨ Primary Prediction: ${resPri} (Score: ${sortedNumbers[0]?.[1].toFixed(2) || 0})`);
 
     const resNum = parseInt(resPri, 10);
 
