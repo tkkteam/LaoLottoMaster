@@ -49,31 +49,7 @@ export function getMirror(num: string | number): string {
   return (MIRRORS[s[0]] || '0') + (MIRRORS[s[1]] || '0');
 }
 
-/**
- * BACKYARD STRATEGY (ชุดเสริม) - Optimized for 2569
- * สูตรวิเคราะห์ใหม่ V7 (Pure Arithmetic)
- * ปรับปรุงให้เป็น Pure Function เพื่อให้การ Backtest ใน Log แม่นยำตรงตามจริง
- * ความแม่นยำ Running (เลขวิ่งใน 2 ตัว): 62.5%+
- */
-export function calculateBackyard(r3Str: string, r2Str: string): string[] {
-  if (!r3Str || r3Str.length < 3 || !r2Str || r2Str.length < 2) return [];
-  
-  const d1 = parseInt(r3Str[0], 10) || 0; // r3 digit 1
-  const d2 = parseInt(r3Str[1], 10) || 0; // r3 digit 2
-  const d3 = parseInt(r3Str[2], 10) || 0; // r3 digit 3
-  const d4 = parseInt(r2Str[0], 10) || 0; // r2 digit 1
-  const d5 = parseInt(r2Str[1], 10) || 0; // r2 digit 2
-
-  // Tens calculation (หลักสิบ)
-  const t1 = (d1 + d2 + 6) % 10;
-  const t2 = (d2 + d3 + 5) % 10;
-  
-  // Units calculation (หลักหน่วย)
-  const u1 = (d4 + 2) % 10;
-  const u2 = (d5 + 8) % 10;
-
-  return [`${t1}${u1}`, `${t1}${u2}`, `${t2}${u1}`, `${t2}${u2}`];
-}
+export { calculateBackyard, backtestBackyardWithConstants, type BackyardBacktestResult } from './formulas/backyardStrategy';
 
 /**
  * วิเคราะห์โอกาสออกซ้ำ (Repeat Analysis)
@@ -370,8 +346,6 @@ export function calculateCombinedConfidence(
 
   return Math.round(scoreFromAccuracy + convergenceBonus + scoreFromFrequency);
 }
-
-export { backtestBackyardWithConstants, type BackyardBacktestResult } from './formulas/backyardStrategy';
 
 export function backtestPattern(
   results: LottoResult[],

@@ -4,8 +4,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend
 } from 'recharts';
-import {
-  fetchLottoData,
+import { fetchLottoData,
   CSV_URL,
   getDigitSum,
   getMirror,
@@ -22,7 +21,6 @@ import {
   unified3DEngine
   } from './services/lottoService';
 
-import { LaoLotteryAnalyzer } from './services/LaoLotteryAnalyzer';
 import { neuralAI } from './services/neuralAIService';
 
   import { LottoResult, PredictionResult, BacktestResult, Pattern, HybridPatternInfo, RepeatAnalysis, RunningDigitLog } from './types';
@@ -47,16 +45,12 @@ import { neuralAI } from './services/neuralAIService';
   const [bestPatternInfo, setBestPatternInfo] = useState<{ pattern: Pattern } | null>(null);
   const [hybridPatterns, setHybridPatterns] = useState<Array<HybridPatternInfo>>([]);
   const [repeatAnalysis, setRepeatAnalysis] = useState<RepeatAnalysis | null>(null);
-  const [autoSet, setAutoSet] = useState<any>(null);
-  const [autoSetLogs, setAutoSetLogs] = useState<any>(null);
-  const [showAutoSetLogs, setShowAutoSetLogs] = useState(false);
   const [backyardBacktest, setBackyardBacktest] = useState<BackyardBacktestResult | null>(null);
   const [showBackyardLogs, setShowBackyardLogs] = useState(false);
   const [allPatternPredictions, setAllPatternPredictions] = useState<any[]>([]);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [expandedPattern, setExpandedPattern] = useState<string | null>(null);
   const [showExplanation, setShowExplanation] = useState(false);
-  const [finalSelection, setFinalSelection] = useState<any[]>([]);
 
   // NEW: Neural AI Prediction
   const [neuralPrediction, setNeuralPrediction] = useState<{ prediction: string, confidence: number } | null>(null);
@@ -144,38 +138,27 @@ import { neuralAI } from './services/neuralAIService';
     const data = await fetchLottoData();
     setAllData(data);
 
-    // ✅ Lao Lottery Analyzer Integration
-    try {
-      const analyzer = new LaoLotteryAnalyzer(CSV_URL);
-      await analyzer.load();
-      setAutoSet(analyzer.generateAutoSet());
-      setAutoSetLogs(analyzer.backtest(30)); // เก็บ Log ย้อนหลัง 30 งวด
-      setFinalSelection(analyzer.selectFinalSet({ min: 3, max: 6 })); // คัด 3-6 คู่
-      
-      // ✅ 1. ค้นหาสูตรที่ดีที่สุดจากการ Backtest ย้อนหลัง (ใช้ Logic จาก Hybrid Patterns)
-      const hybrid = analyzeHybridPatterns(data, undefined, 30);
-      setHybridPatterns(hybrid);
-      
-      // หาสูตรที่มี Accuracy รวมสูงสุด (Direct + Running)
-      const bestHybrid = [...hybrid].sort((a, b) => {
-        const scoreA = a.historicalStats.directAccuracy + (a.historicalStats.runningAccuracy * 0.5);
-        const scoreB = b.historicalStats.directAccuracy + (b.historicalStats.runningAccuracy * 0.5);
-        return scoreB - scoreA;
-      })[0];
+    // ✅ 1. ค้นหาสูตรที่ดีที่สุดจากการ Backtest ย้อนหลัง (ใช้ Logic จาก Hybrid Patterns)
+    const hybrid = analyzeHybridPatterns(data, undefined, 30);
+    setHybridPatterns(hybrid);
+    
+    // หาสูตรที่มี Accuracy รวมสูงสุด (Direct + Running)
+    const bestHybrid = [...hybrid].sort((a, b) => {
+      const scoreA = a.historicalStats.directAccuracy + (a.historicalStats.runningAccuracy * 0.5);
+      const scoreB = b.historicalStats.directAccuracy + (b.historicalStats.runningAccuracy * 0.5);
+      return scoreB - scoreA;
+    })[0];
 
-      if (bestHybrid) {
-        // ใช้คำทำนายจากสูตรที่ดีที่สุด
-        const lastResult = data[0];
-        const prevResult = data[1];
-        const pred = bestHybrid.pattern.calc(
-          parseInt(prevResult.r2, 10),
-          parseInt(lastResult.r2, 10),
-          lastResult.r4,
-          data
-        ).toString().padStart(2, '0');
-      }
-    } catch (e) {
-      console.error('Lao Lottery Analyzer Error:', e);
+    if (bestHybrid) {
+      // ใช้คำทำนายจากสูตรที่ดีที่สุด
+      const lastResult = data[0];
+      const prevResult = data[1];
+      const pred = bestHybrid.pattern.calc(
+        parseInt(prevResult.r2, 10),
+        parseInt(lastResult.r2, 10),
+        lastResult.r4,
+        data
+      ).toString().padStart(2, '0');
     }
 
     if (data.length > 30) {
@@ -710,125 +693,6 @@ import { neuralAI } from './services/neuralAIService';
               </div>
             )}
           </section>
-
-          {/* Lao Lottery Analyzer - Auto Set */}
-          {autoSet && (
-            <section className="glass-card !border-l-8 !border-l-amber-500 !bg-amber-500/5">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-6">
-                <div>
-                  <h2 className="section-title text-amber-500 !mb-0">Auto Hybrid Formula (สูตรผสมอัตโนมัติ)</h2>
-                  <p className="text-[10px] text-slate-500 mt-1 font-black uppercase tracking-widest">Statistical Analysis & Mirror Logic</p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                   {autoSetLogs && (
-                     <span className="px-2.5 py-1 bg-amber-500/10 border border-amber-500/30 rounded-lg text-[9px] font-black text-amber-500 uppercase">
-                       Accuracy: {autoSetLogs.accuracy.toFixed(1)}%
-                     </span>
-                   )}
-                   <button
-                     onClick={() => setShowAutoSetLogs(true)}
-                     className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/40 border border-amber-500/30 rounded-lg text-[9px] font-black text-amber-500 uppercase tracking-widest transition-all"
-                   >
-                     📋 VIEW LOG
-                   </button>
-                </div>
-              </div>
-
-              {/* AUTO HYBRID LOGS MODAL */}
-              {showAutoSetLogs && autoSetLogs && (
-                <div className="fixed inset-0 z-[120] flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-300">
-                  <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-md" onClick={() => setShowAutoSetLogs(false)}></div>
-                  <div className="relative w-full max-w-5xl max-h-[90vh] bg-slate-900 border border-amber-500/30 rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
-                    <div className="p-6 border-b border-amber-500/20 bg-amber-500/5 flex justify-between items-center">
-                      <div>
-                        <h3 className="text-xl font-black text-white">📋 AUTO HYBRID LOGS</h3>
-                        <p className="text-[10px] font-black text-amber-500 uppercase tracking-widest mt-1">
-                          สถิติทดสอบย้อนหลัง {autoSetLogs.total} งวด | แม่นยำ {autoSetLogs.accuracy.toFixed(1)}%
-                        </p>
-                      </div>
-                      <button onClick={() => setShowAutoSetLogs(false)} className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all">
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
-                      </button>
-                    </div>
-                    <div className="flex-1 overflow-auto p-6">
-                      <table className="w-full text-sm">
-                        <thead className="sticky top-0 bg-slate-900 z-10">
-                          <tr className="border-b border-slate-700">
-                            <th className="text-left py-3 text-[10px] font-black text-slate-500 uppercase">งวดวันที่</th>
-                            <th className="text-left py-3 text-[10px] font-black text-slate-500 uppercase">ชุดตัวเลขที่ทำนาย</th>
-                            <th className="text-center py-3 text-[10px] font-black text-slate-500 uppercase">ผลออก</th>
-                            <th className="text-right py-3 text-[10px] font-black text-slate-500 uppercase">สถานะ</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {autoSetLogs.logs.map((log: any, idx: number) => (
-                            <tr key={idx} className={`border-b border-slate-800/50 hover:bg-slate-800/30 ${log.isHit ? 'bg-emerald-500/5' : ''}`}>
-                              <td className="py-4 font-black text-slate-400">{log.date}</td>
-                              <td className="py-4">
-                                <div className="flex flex-wrap gap-1.5 max-w-md">
-                                  {log.predicted.map((p: number, i: number) => (
-                                    <span key={i} className={`px-2 py-0.5 rounded text-[11px] font-black ${log.actual === p.toString().padStart(2, '0') ? 'bg-amber-500 text-slate-900' : 'bg-slate-800 text-slate-400'}`}>
-                                      {p.toString().padStart(2, '0')}
-                                    </span>
-                                  ))}
-                                </div>
-                              </td>
-                              <td className="py-4 text-center text-lg font-black text-white">{log.actual}</td>
-                              <td className="py-4 text-right">
-                                {log.isHit ? (
-                                  <span className="px-3 py-1 bg-emerald-500/20 text-emerald-400 rounded-full text-[10px] font-black">HIT 🎯</span>
-                                ) : (
-                                  <span className="px-3 py-1 bg-red-500/10 text-red-500/50 rounded-full text-[10px] font-black">MISS</span>
-                                )}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="p-4 bg-slate-950/40 rounded-2xl border border-amber-500/10">
-                  <p className="text-[10px] font-black text-amber-500/60 uppercase tracking-widest mb-3 text-center">Main Candidates (เลขเด่น)</p>
-                  <div className="flex flex-wrap justify-center gap-2">
-                    {autoSet.candidate2Digits.map((num: number, i: number) => (
-                      <div key={i} className="w-10 h-10 flex items-center justify-center bg-amber-500/10 rounded-lg text-lg font-black text-slate-300 border border-amber-500/10">
-                        {num.toString().padStart(2, '0')}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="p-4 bg-slate-950/40 rounded-2xl border border-amber-500/10">
-                  <p className="text-[10px] font-black text-amber-500/60 uppercase tracking-widest mb-3 text-center">Mirror Sets (เลขกลับ)</p>
-                  <div className="flex flex-wrap justify-center gap-2">
-                    {autoSet.mirrorCandidates.map((num: number, i: number) => (
-                      <div key={i} className="w-10 h-10 flex items-center justify-center bg-slate-900 rounded-lg text-lg font-black text-slate-500 border border-slate-800">
-                        {num.toString().padStart(2, '0')}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-4 p-6 bg-gradient-to-br from-amber-500 to-amber-600 rounded-[2rem] shadow-lg shadow-amber-500/20">
-                <p className="text-[10px] font-black text-amber-950 uppercase tracking-[0.3em] mb-4 text-center">Top Tier Selection (คัดพิเศษ 3-6 คู่)</p>
-                <div className="flex flex-wrap justify-center gap-4">
-                  {finalSelection.map((item: any, i: number) => (
-                    <div key={i} className="flex flex-col items-center bg-amber-950/20 p-3 rounded-2xl min-w-[70px] border border-white/10">
-                      <span className="text-3xl font-black text-white glow-white">
-                        {item.number.toString().padStart(2, '0')}
-                      </span>
-                      <span className="text-[9px] font-black text-amber-900 mt-1 uppercase">Score: {item.score}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </section>
-          )}
 
           {/* Engine */}
           <section className="glass-card bg-gradient-to-br from-slate-900/60 to-slate-900/40">
