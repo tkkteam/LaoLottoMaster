@@ -150,50 +150,6 @@ function neuralPattern(p: number, l: number, l4: string | undefined, results: Lo
   return (((tens + 10) % 10) * 10) + ((units + 10) % 10);
 }
 
-// ===== 6. DEEP LEARNING 4D =====
-function deepLearning4D(p: number, l: number, l4: string | undefined, results: LottoResult[] | undefined): number {
-  if (!results || results.length < 20) return ((Math.floor(l / 10) + 3) % 10 * 10) + ((l % 10 + 7) % 10);
-  const analysisWindow = Math.min(50, results.length);
-  const recentData = results.slice(0, analysisWindow);
-  const lastResult = results[0];
-  const tensTransition = Array(10).fill(0).map(() => Array(10).fill(0));
-  const unitsTransition = Array(10).fill(0).map(() => Array(10).fill(0));
-  for (let i = 0; i < recentData.length - 1; i++) {
-    const weight = (recentData.length - i) / recentData.length;
-    const currentR2 = parseInt(recentData[i + 1].r2, 10);
-    const nextR2 = parseInt(recentData[i].r2, 10);
-    tensTransition[Math.floor(currentR2 / 10)][Math.floor(nextR2 / 10)] += weight;
-    unitsTransition[currentR2 % 10][nextR2 % 10] += weight;
-  }
-  const lTens = Math.floor(parseInt(lastResult.r2, 10) / 10);
-  const lUnits = parseInt(lastResult.r2, 10) % 10;
-  const getBest = (matrix: number[][], current: number) => {
-    const row = matrix[current];
-    const max = Math.max(...row);
-    return max > 0 ? row.indexOf(max) : (current + 1) % 10;
-  };
-  const predictedTensMarkov = getBest(tensTransition, lTens);
-  const predictedUnitsMarkov = getBest(unitsTransition, lUnits);
-  const positionPattern = [Array(10).fill(0), Array(10).fill(0)];
-  recentData.forEach((r, idx) => {
-    const weight = (recentData.length - idx) / recentData.length;
-    const r4 = (r.r4 || '').padStart(4, '0');
-    positionPattern[0][parseInt(r4[2], 10)] += weight;
-    positionPattern[1][parseInt(r4[3], 10)] += weight;
-  });
-  const predictedTens4D = positionPattern[0].indexOf(Math.max(...positionPattern[0]));
-  const predictedUnits4D = positionPattern[1].indexOf(Math.max(...positionPattern[1]));
-  const recent10 = results.slice(0, Math.min(10, results.length));
-  const recentTensAvg = recent10.reduce((sum, r) => sum + Math.floor(parseInt(r.r2, 10) / 10), 0) / recent10.length;
-  const recentUnitsAvg = recent10.reduce((sum, r) => sum + (parseInt(r.r2, 10) % 10), 0) / recent10.length;
-  const predictedTensRecent = Math.round(recentTensAvg) % 10;
-  const predictedUnitsRecent = Math.round(recentUnitsAvg) % 10;
-  const tensVotes = Array(10).fill(0), unitsVotes = Array(10).fill(0);
-  tensVotes[predictedTensMarkov] += 4; unitsVotes[predictedUnitsMarkov] += 4;
-  tensVotes[predictedTens4D] += 3; unitsVotes[predictedUnits4D] += 3;
-  tensVotes[predictedTensRecent] += 3; unitsVotes[predictedUnitsRecent] += 3;
-  return (tensVotes.indexOf(Math.max(...tensVotes)) * 10) + unitsVotes.indexOf(Math.max(...unitsVotes));
-}
 
 // ===== 7. QUANTUM ANALYSIS =====
 function quantumAnalysis(p: number, l: number, l4: string | undefined, results: LottoResult[] | undefined): number {
@@ -797,7 +753,6 @@ export const unifiedQuantumEngine: Pattern = {
       quantumFlux,
       markovChain,
       neuralPattern,
-      deepLearning4D,
       quantumAnalysis,
       advancedCluster,
       ngramPattern,

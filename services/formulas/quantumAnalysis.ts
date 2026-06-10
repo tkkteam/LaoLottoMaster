@@ -47,41 +47,17 @@ export const quantumAnalysisFormula: Pattern = {
     });
 
     // ===== 3. GAP ANALYSIS =====
-    // วิเคราะห์ช่องว่างระหว่างการออกของแต่ละเลข
-    const tensLastSeen: number[] = Array(10).fill(-1);
-    const unitsLastSeen: number[] = Array(10).fill(-1);
-    const tensGaps: number[] = Array(10).fill(0);
-    const unitsGaps: number[] = Array(10).fill(0);
-    
-    recentData.forEach((r, idx) => {
-      const r2 = parseInt(r.r2, 10);
-      const tens = Math.floor(r2 / 10);
-      const units = r2 % 10;
-      
-      if (tensLastSeen[tens] !== -1) {
-        tensGaps[tens] += idx - tensLastSeen[tens];
-      }
-      if (unitsLastSeen[units] !== -1) {
-        unitsGaps[units] += idx - unitsLastSeen[units];
-      }
-      
-      tensLastSeen[tens] = idx;
-      unitsLastSeen[units] = idx;
-    });
-
-    // คำนวณ average gap
+    // วิเคราะห์ระยะเวลาที่เลขแต่ละตัวยังไม่ออก (Current Gap)
+    // เลขที่ห่างหายไปนาน (Gap สูง) จะได้คะแนนสะสมสูงขึ้น
     const tensAvgGap: number[] = Array(10).fill(0);
     const unitsAvgGap: number[] = Array(10).fill(0);
     
     for (let d = 0; d < 10; d++) {
-      const count = tensFreq[d];
-      if (count > 1) {
-        tensAvgGap[d] = tensGaps[d] / (count - 1);
-      }
-      const uCount = unitsFreq[d];
-      if (uCount > 1) {
-        unitsAvgGap[d] = unitsGaps[d] / (uCount - 1);
-      }
+      const tIdx = recentData.findIndex(r => Math.floor(parseInt(r.r2, 10) / 10) === d);
+      tensAvgGap[d] = tIdx === -1 ? window : tIdx;
+      
+      const uIdx = recentData.findIndex(r => parseInt(r.r2, 10) % 10 === d);
+      unitsAvgGap[d] = uIdx === -1 ? window : uIdx;
     }
 
     // ===== 4. MOMENTUM ANALYSIS =====
@@ -159,9 +135,9 @@ export const quantumAnalysisFormula: Pattern = {
       for (let u = 0; u < 10; u++) {
         const pairScore = tensScore[t] + unitsScore[u];
         
-        // Bonus ถ้าคู่เคยออกด้วยกันบ่อย
+        // pairBonus ปรับเหลือ 0 (ผ่านการ Backtest ว่ามีความแม่นยำสูงสุดและเลขกระจายตัวได้ดี)
         const pairFreq = recentData.filter(r => parseInt(r.r2, 10) === t * 10 + u).length;
-        const pairBonus = pairFreq * 5;
+        const pairBonus = pairFreq * 0;
         
         if (pairScore + pairBonus > bestScore) {
           bestScore = pairScore + pairBonus;

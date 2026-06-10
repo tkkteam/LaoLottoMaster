@@ -1,12 +1,11 @@
 
-import { LottoResult, Pattern } from '../types';
+import { LottoResult, Pattern, BacktestResult } from '../types';
 import {
   hotNumbersFormula,
   master2DigitFormula,
   quantumFluxFormula,
   markovChainFormula,
   neuralPatternFormula,
-  deepLearning4DFormula,
   quantumAnalysisFormula,
   advancedClusterFormula,
   ngramPattern,
@@ -246,7 +245,6 @@ export const PATTERNS: Pattern[] = [
   quantumFluxFormula,
   markovChainFormula,
   neuralPatternFormula,
-  deepLearning4DFormula,
   quantumAnalysisFormula,
   advancedClusterFormula,
   ngramPattern,
@@ -277,7 +275,6 @@ export {
   staticCoreFormula,
   markovChainFormula,
   neuralPatternFormula,
-  deepLearning4DFormula,
   quantumAnalysisFormula,
   advancedClusterFormula,
   quantumMaxPattern,
