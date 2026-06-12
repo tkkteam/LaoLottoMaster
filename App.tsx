@@ -296,26 +296,6 @@ const App: React.FC = () => {
 
     const resNum = parseInt(resPri, 10);
 
-    // ===== HOT DIGITS FROM ALL 21 FORMULAS (Dynamic, max 4) =====
-    const digitFreq = Array(10).fill(0);
-    allPredictions.forEach(pred => {
-      const tens = parseInt(pred.value[0], 10);
-      const units = parseInt(pred.value[1], 10);
-      digitFreq[tens]++;
-      digitFreq[units]++;
-    });
-    const sortedHotDigits = digitFreq
-      .map((freq, digit) => ({ digit, freq }))
-      .sort((a, b) => b.freq - a.freq);
-    
-    // เลือกเลขเด่นแบบไดนามิก: ใช้ threshold 60% ของความถี่สูงสุด
-    const maxFreq = sortedHotDigits[0]?.freq || 1;
-    const threshold = maxFreq * 0.6;
-    const hotDigits = sortedHotDigits
-      .filter(d => d.freq >= threshold)
-      .slice(0, 4)
-      .map(x => x.digit);
-
     // 3-Digit Target: Use the new Unified 3D Engine
     const tripleStr = unified3DEngine.getTriple ? unified3DEngine.getTriple(allData) : "000";
 
@@ -340,7 +320,6 @@ const App: React.FC = () => {
       const isRecentlyDrawn = predictionNum === latestR2;
       const wasDrawnRecently = recentDrawnNumbers.includes(predictionNum);
       const mirrorNumber = getMirror(predictionNum);
-      const runningDigits = hotDigits.slice(0, 4);
 
       return {
         name: pred.name,
@@ -353,8 +332,7 @@ const App: React.FC = () => {
         stabilityScore: hybridInfo?.stabilityScore || 0,
         isRecentlyDrawn: isRecentlyDrawn,
         lastDrawnDate: wasDrawnRecently ? latestDrawnDate : '',
-        mirrorNumber: mirrorNumber,
-        runningDigits: runningDigits
+        mirrorNumber: mirrorNumber
       };
     });
 
@@ -1345,26 +1323,7 @@ const App: React.FC = () => {
                               </div>
                             </div>
 
-                            {pattern.isRecentlyDrawn && (
-                              <div className="mb-6 p-4 bg-cyan-500/10 border border-cyan-500/30 rounded-xl">
-                                <h5 className="text-sm font-black text-cyan-400 uppercase mb-3">
-                                  เลขเด่นประจำวัน
-                                </h5>
-                                <div className="grid grid-cols-10 gap-2">
-                                  {pattern.runningDigits.map((digit, idx) => (
-                                    <div
-                                      key={idx}
-                                      className="p-2 bg-slate-800/50 rounded-lg text-center"
-                                    >
-                                      <span className="text-lg font-black text-white">{digit}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                                <p className="text-[9px] text-slate-500 mt-2">
-                                  ใช้หลักสิบหรือหลักหน่วยจากเลขที่ทำนาย ผสมกับ 0-9
-                                </p>
-                              </div>
-                            )}
+
 
                             <h5 className="text-sm font-black text-slate-400 uppercase mb-3">📈 ผลย้อนหลัง 10 งวดล่าสุด</h5>
                             <div className="grid grid-cols-5 md:grid-cols-10 gap-2">

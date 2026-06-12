@@ -1,16 +1,12 @@
-export { hotNumbersFormula } from './hotNumbers';
 export { master2DigitFormula } from './master2Digit';
-export { quantumFluxFormula } from './quantumFlux';
 export { markovChainFormula } from './markovChain';
 export { neuralPatternFormula } from './neuralPattern';
-export { quantumAnalysisFormula } from './quantumAnalysis';
+export { neuralAdaptiveV8Formula } from './neuralAdaptiveV8';
 
 export { advancedClusterFormula } from './advancedCluster';
 export { ngramPattern } from './ngram';
 export { staticCoreFormula } from './staticCore';
-export { quantumMaxPattern } from './quantumMax';
 export { bayesianProbabilityFormula } from './bayesianProbability';
-export { entropyAnalysisFormula } from './entropyAnalysis';
 export { fourierCycleFormula } from './fourierCycle';
 export { regressionTrendFormula } from './regressionTrend';
 export { patternMemoryFormula } from './patternMemory';
@@ -18,6 +14,6 @@ export { smartFusionFormula } from './smartFusion';
 export { crossCorrelationFormula } from './crossCorrelation';
 export { adaptiveWeightFormula } from './adaptiveWeight';
 export { digitPairFrequencyFormula } from './digitPairFrequency';
-export { monteCarlo3DFormula } from './monteCarlo3D';
 export { unified3DEngine } from './deepLearning3D';
 export { unifiedQuantumEngine } from './unifiedQuantumEngine';
+

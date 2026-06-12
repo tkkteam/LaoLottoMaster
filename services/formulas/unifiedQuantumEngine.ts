@@ -1,4 +1,5 @@
 import { Pattern, LottoResult } from '../../types';
+import { neuralAdaptiveV8Formula } from './neuralAdaptiveV8';
 
 /**
  * UNIFIED QUANTUM ANALYSIS ENGINE
@@ -36,19 +37,7 @@ function getMirror(s: string): string {
   return (MIRRORS[s[0]] || '0') + (MIRRORS[s[1]] || '0');
 }
 
-// ===== 1. HOT NUMBERS =====
-function hotNumbers(p: number, l: number, l4: string | undefined, results: LottoResult[] | undefined): number {
-  if (!results || results.length < 10) return (p + l) % 100;
-  const window = Math.min(20, results.length);
-  const tensCount = Array(10).fill(0);
-  const unitsCount = Array(10).fill(0);
-  for (let i = 0; i < window; i++) {
-    const r2 = parseInt(results[i].r2, 10);
-    tensCount[Math.floor(r2 / 10)]++;
-    unitsCount[r2 % 10]++;
-  }
-  return (tensCount.indexOf(Math.max(...tensCount)) * 10) + unitsCount.indexOf(Math.max(...unitsCount));
-}
+
 
 // ===== 2. MASTER 2-DIGIT =====
 function master2Digit(p: number, l: number, l4: string | undefined, results: LottoResult[] | undefined): number {
@@ -62,44 +51,7 @@ function master2Digit(p: number, l: number, l4: string | undefined, results: Lot
   return (tens * 10) + units;
 }
 
-// ===== 3. QUANTUM FLUX =====
-function quantumFlux(p: number, l: number, l4: string | undefined, results: LottoResult[] | undefined): number {
-  let hotTens = 0, hotUnits = 0, isRepeatDetected = false;
-  if (results && results.length >= 10) {
-    const window = Math.min(20, results.length);
-    const recentData = results.slice(0, window);
-    if (results.length >= 2) {
-      const lastR2 = parseInt(results[0].r2, 10);
-      const prevR2 = parseInt(results[1].r2, 10);
-      if (lastR2 === prevR2) isRepeatDetected = true;
-    }
-    const tensFreq = Array(10).fill(0);
-    const unitsFreq = Array(10).fill(0);
-    recentData.forEach((r, idx) => {
-      const r2 = parseInt(r.r2, 10);
-      const w = (isRepeatDetected && idx < 2) ? 0.5 : 1;
-      tensFreq[Math.floor(r2 / 10)] += w;
-      unitsFreq[r2 % 10] += w;
-    });
-    hotTens = tensFreq.indexOf(Math.max(...tensFreq));
-    hotUnits = unitsFreq.indexOf(Math.max(...unitsFreq));
-  }
-  const l1 = Math.floor(l / 10), l2 = l % 10;
-  let lastTens = l1, lastUnits = l2;
-  if (isRepeatDetected && results && results.length >= 3) {
-    const thirdR2 = parseInt(results[2].r2, 10);
-    lastTens = Math.floor(thirdR2 / 10);
-    lastUnits = thirdR2 % 10;
-  }
-  const p1 = Math.floor(p / 10), p2 = p % 10;
-  const baseTens = (p1 + l1 + 7) % 10, baseUnits = (p2 + l2 + 1) % 10;
-  const tensVotes = Array(10).fill(0), unitsVotes = Array(10).fill(0);
-  tensVotes[hotTens] += 5; unitsVotes[hotUnits] += 5;
-  const lw = isRepeatDetected ? 1 : 3;
-  tensVotes[lastTens] += lw; unitsVotes[lastUnits] += lw;
-  tensVotes[baseTens] += 2; unitsVotes[baseUnits] += 2;
-  return (tensVotes.indexOf(Math.max(...tensVotes)) * 10) + unitsVotes.indexOf(Math.max(...unitsVotes));
-}
+
 
 // ===== 4. MARKOV CHAIN =====
 function markovChain(p: number, l: number, l4: string | undefined, results: LottoResult[] | undefined): number {
@@ -151,65 +103,7 @@ function neuralPattern(p: number, l: number, l4: string | undefined, results: Lo
 }
 
 
-// ===== 7. QUANTUM ANALYSIS =====
-function quantumAnalysis(p: number, l: number, l4: string | undefined, results: LottoResult[] | undefined): number {
-  if (!results || results.length < 30) return (p + l) % 100;
-  const window = Math.min(50, results.length);
-  const recentData = results.slice(0, window);
-  const tensFreq = Array(10).fill(0), unitsFreq = Array(10).fill(0);
-  recentData.forEach(r => {
-    const r2 = parseInt(r.r2, 10);
-    tensFreq[Math.floor(r2 / 10)]++;
-    unitsFreq[r2 % 10]++;
-  });
-  const tensRecency = Array(10).fill(0), unitsRecency = Array(10).fill(0);
-  recentData.forEach((r, idx) => {
-    const r2 = parseInt(r.r2, 10);
-    const weight = 1 + (window - idx) / window;
-    tensRecency[Math.floor(r2 / 10)] += weight;
-    unitsRecency[r2 % 10] += weight;
-  });
-  const tensLastSeen = Array(10).fill(-1), unitsLastSeen = Array(10).fill(-1);
-  const tensGaps = Array(10).fill(0), unitsGaps = Array(10).fill(0);
-  recentData.forEach((r, idx) => {
-    const r2 = parseInt(r.r2, 10);
-    const tens = Math.floor(r2 / 10), units = r2 % 10;
-    if (tensLastSeen[tens] !== -1) tensGaps[tens] += idx - tensLastSeen[tens];
-    if (unitsLastSeen[units] !== -1) unitsGaps[units] += idx - unitsLastSeen[units];
-    tensLastSeen[tens] = idx; unitsLastSeen[units] = idx;
-  });
-  const tensAvgGap = Array(10).fill(0), unitsAvgGap = Array(10).fill(0);
-  for (let d = 0; d < 10; d++) {
-    if (tensFreq[d] > 1) tensAvgGap[d] = tensGaps[d] / (tensFreq[d] - 1);
-    if (unitsFreq[d] > 1) unitsAvgGap[d] = unitsGaps[d] / (unitsFreq[d] - 1);
-  }
-  const recent10 = results.slice(0, 10), prev10 = results.slice(10, 20);
-  const recentTens = Array(10).fill(0), recentUnits = Array(10).fill(0);
-  const prevTens = Array(10).fill(0), prevUnits = Array(10).fill(0);
-  recent10.forEach(r => { const r2 = parseInt(r.r2, 10); recentTens[Math.floor(r2 / 10)]++; recentUnits[r2 % 10]++; });
-  prev10.forEach(r => { const r2 = parseInt(r.r2, 10); prevTens[Math.floor(r2 / 10)]++; prevUnits[r2 % 10]++; });
-  const tensMomentum = Array(10).fill(0), unitsMomentum = Array(10).fill(0);
-  for (let d = 0; d < 10; d++) { tensMomentum[d] = recentTens[d] - prevTens[d]; unitsMomentum[d] = recentUnits[d] - prevUnits[d]; }
-  const tensScore = Array(10).fill(0), unitsScore = Array(10).fill(0);
-  const maxTensFreq = Math.max(...tensFreq, 1), maxUnitsFreq = Math.max(...unitsFreq, 1);
-  const maxTensRecency = Math.max(...tensRecency, 1), maxUnitsRecency = Math.max(...unitsRecency, 1);
-  const maxTensAvgGap = Math.max(...tensAvgGap, 1), maxUnitsAvgGap = Math.max(...unitsAvgGap, 1);
-  const maxTensMomentum = Math.max(...tensMomentum.map(Math.abs), 1), maxUnitsMomentum = Math.max(...unitsMomentum.map(Math.abs), 1);
-  for (let d = 0; d < 10; d++) {
-    tensScore[d] = (tensFreq[d] / maxTensFreq) * 30 + (tensRecency[d] / maxTensRecency) * 25 + (tensAvgGap[d] / maxTensAvgGap) * 20 + ((tensMomentum[d] + maxTensMomentum) / (2 * maxTensMomentum)) * 25;
-    unitsScore[d] = (unitsFreq[d] / maxUnitsFreq) * 30 + (unitsRecency[d] / maxUnitsRecency) * 25 + (unitsAvgGap[d] / maxUnitsAvgGap) * 20 + ((unitsMomentum[d] + maxUnitsMomentum) / (2 * maxUnitsMomentum)) * 25;
-  }
-  let bestTens = 0, bestUnits = 0, bestScore = 0;
-  for (let t = 0; t < 10; t++) {
-    for (let u = 0; u < 10; u++) {
-      const pairScore = tensScore[t] + unitsScore[u];
-      const pairFreq = recentData.filter(r => parseInt(r.r2, 10) === t * 10 + u).length;
-      const pairBonus = pairFreq * 5;
-      if (pairScore + pairBonus > bestScore) { bestScore = pairScore + pairBonus; bestTens = t; bestUnits = u; }
-    }
-  }
-  return (bestTens * 10) + bestUnits;
-}
+
 
 // ===== 8. ADVANCED CLUSTER =====
 function advancedCluster(p: number, l: number, l4: string | undefined, results: LottoResult[] | undefined): number {
@@ -274,33 +168,7 @@ function staticCore(p: number, l: number, l4: string | undefined, results: Lotto
   return (tens * 10) + units;
 }
 
-// ===== 11. QUANTUM MAX =====
-function quantumMax(p: number, l: number, l4: string | undefined, results: LottoResult[] | undefined): number {
-  if (!results || results.length < 10) return (p + l) % 100;
-  const rawNumbers = results.slice(0, 100).map(r => parseInt(r.r2, 10));
-  const data = rawNumbers.slice(-Math.min(100, rawNumbers.length));
-  const freq: Record<number, number> = {}, lastSeen: Record<number, number> = {}, transition: Record<string, number> = {};
-  data.forEach((num, idx) => {
-    const digits = num.toString().padStart(2, '0').split('').map(Number);
-    digits.forEach(d => { freq[d] = (freq[d] || 0) + 1; lastSeen[d] = idx; });
-    if (digits.length === 2) { const key = `${digits[0]}->${digits[1]}`; transition[key] = (transition[key] || 0) + 1; }
-  });
-  const maxFreq = Math.max(...Object.values(freq), 1), maxGap = data.length || 1;
-  const digitScores = [];
-  for (let d = 0; d <= 9; d++) {
-    const f = freq[d] || 0, gap = data.length - (lastSeen[d] ?? -1);
-    const normFreq = f / maxFreq, normGap = gap / maxGap;
-    let markovScore = 0;
-    Object.entries(transition).forEach(([k, v]) => { if (k.startsWith(`${d}->`) || k.endsWith(`->${d}`)) markovScore += v; });
-    const normMarkov = markovScore / (data.length || 1);
-    const score = 0.33 * normFreq + 0.33 * normGap + 0.34 * normMarkov;
-    digitScores.push({ digit: d, score });
-  }
-  digitScores.sort((a, b) => b.score - a.score);
-  const topDigits = digitScores.slice(0, 5).map(r => r.digit);
-  const bestTens = topDigits[0] ?? 0, bestUnits = topDigits[1] ?? 0;
-  return (bestTens * 10) + bestUnits;
-}
+
 
 // ===== 12. BAYESIAN PROBABILITY =====
 function bayesianProbability(p: number, l: number, l4: string | undefined, results: LottoResult[] | undefined): number {
@@ -354,50 +222,7 @@ function bayesianProbability(p: number, l: number, l4: string | undefined, resul
   return (bestTens * 10) + bestUnits;
 }
 
-// ===== 13. ENTROPY ANALYSIS =====
-function entropyAnalysis(p: number, l: number, l4: string | undefined, results: LottoResult[] | undefined): number {
-  if (!results || results.length < 20) return ((Math.floor(l / 10) + 5) % 10 * 10) + ((l % 10 + 2) % 10);
-  const window = Math.min(60, results.length);
-  const data = results.slice(0, window);
-  const tensCount = Array(10).fill(0), unitsCount = Array(10).fill(0);
-  data.forEach(r => { const r2 = parseInt(r.r2, 10); tensCount[Math.floor(r2 / 10)]++; unitsCount[r2 % 10]++; });
-  const calcEntropy = (counts: number[]): number => {
-    const total = counts.reduce((a, b) => a + b, 0);
-    if (total === 0) return 0;
-    let entropy = 0;
-    for (const count of counts) { if (count > 0) { const prob = count / total; entropy -= prob * Math.log2(prob); } }
-    return entropy;
-  };
-  const tensEntropy = calcEntropy(tensCount), maxEntropy = Math.log2(10);
-  const conditionalCounts = Array(10).fill(null).map(() => Array(10).fill(0));
-  const tensTotalForConditional = Array(10).fill(0);
-  data.forEach(r => { const r2 = parseInt(r.r2, 10), tens = Math.floor(r2 / 10), units = r2 % 10; conditionalCounts[tens][units]++; tensTotalForConditional[tens]++; });
-  const entropyRatio = tensEntropy / maxEntropy;
-  const tensProb = tensCount.map(c => c / data.length), unitsProb = unitsCount.map(c => c / data.length);
-  const tensScore = Array(10).fill(0), unitsScore = Array(10).fill(0);
-  for (let d = 0; d < 10; d++) {
-    tensScore[d] = tensProb[d]; unitsScore[d] = unitsProb[d];
-    if (entropyRatio < 0.7) {
-      const lastTens = Math.floor(parseInt(data[0].r2, 10) / 10);
-      const condProb = conditionalCounts[lastTens][d] / (tensTotalForConditional[lastTens] || 1);
-      unitsScore[d] = unitsScore[d] * 0.5 + condProb * 0.5;
-    }
-  }
-  const tensSum = tensScore.reduce((a, b) => a + b, 0), unitsSum = unitsScore.reduce((a, b) => a + b, 0);
-  const tensNorm = tensScore.map(s => s / (tensSum || 1)), unitsNorm = unitsScore.map(s => s / (unitsSum || 1));
-  let bestTens = 0, bestUnits = 0, bestScore = -1;
-  for (let t = 0; t < 10; t++) {
-    for (let u = 0; u < 10; u++) {
-      let score = tensNorm[t] * 0.5 + unitsNorm[u] * 0.5;
-      const pairFreq = conditionalCounts[t][u] / (tensTotalForConditional[t] || 1);
-      score += pairFreq * 0.2;
-      const lastR2 = parseInt(data[0].r2, 10);
-      if (t * 10 + u === lastR2) score *= 0.85;
-      if (score > bestScore) { bestScore = score; bestTens = t; bestUnits = u; }
-    }
-  }
-  return (bestTens * 10) + bestUnits;
-}
+
 
 // ===== 14. FOURIER CYCLE =====
 function fourierCycle(p: number, l: number, l4: string | undefined, results: LottoResult[] | undefined): number {
@@ -748,18 +573,14 @@ export const unifiedQuantumEngine: Pattern = {
   name: "Unified Quantum Analysis Engine (สูตรรวมทั้งหมด)",
   calc: (p, l, l4, results?) => {
     const formulas: Array<(p: number, l: number, l4: string | undefined, results: LottoResult[] | undefined) => number> = [
-      hotNumbers,
       master2Digit,
-      quantumFlux,
       markovChain,
       neuralPattern,
-      quantumAnalysis,
+      neuralAdaptiveV8Formula.calc,
       advancedCluster,
       ngramPattern,
       staticCore,
-      quantumMax,
       bayesianProbability,
-      entropyAnalysis,
       fourierCycle,
       regressionTrend,
       patternMemory,

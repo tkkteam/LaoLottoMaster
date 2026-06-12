@@ -1,18 +1,14 @@
 
 import { LottoResult, Pattern, BacktestResult } from '../types';
 import {
-  hotNumbersFormula,
   master2DigitFormula,
-  quantumFluxFormula,
   markovChainFormula,
   neuralPatternFormula,
-  quantumAnalysisFormula,
+  neuralAdaptiveV8Formula,
   advancedClusterFormula,
   ngramPattern,
   staticCoreFormula,
-  quantumMaxPattern,
   bayesianProbabilityFormula,
-  entropyAnalysisFormula,
   fourierCycleFormula,
   regressionTrendFormula,
   patternMemoryFormula,
@@ -20,7 +16,6 @@ import {
   crossCorrelationFormula,
   adaptiveWeightFormula,
   digitPairFrequencyFormula,
-  monteCarlo3DFormula,
   unified3DEngine,
   unifiedQuantumEngine
 } from './formulas';
@@ -186,6 +181,12 @@ export function analyzeRepeatProbability(
 }
 
 
+let globalLottoHistory: LottoResult[] = [];
+
+export function getFullLottoHistory(): LottoResult[] {
+  return globalLottoHistory;
+}
+
 export const fetchLottoData = async (): Promise<LottoResult[]> => {
   try {
     // Add cache busting timestamp
@@ -214,6 +215,7 @@ export const fetchLottoData = async (): Promise<LottoResult[]> => {
     // The CSV has newest results at the bottom (May 2569)
     // We want allData[0] to be the NEWEST result for the UI and AI
     const sortedData = [...parsedData].reverse();
+    globalLottoHistory = sortedData;
 
     return sortedData;
     } catch (e) {
@@ -240,18 +242,14 @@ export const fetchLottoData = async (): Promise<LottoResult[]> => {
  */
 
 export const PATTERNS: Pattern[] = [
-  hotNumbersFormula,
   master2DigitFormula,
-  quantumFluxFormula,
   markovChainFormula,
   neuralPatternFormula,
-  quantumAnalysisFormula,
+  neuralAdaptiveV8Formula,
   advancedClusterFormula,
   ngramPattern,
   staticCoreFormula,
-  quantumMaxPattern,
   bayesianProbabilityFormula,
-  entropyAnalysisFormula,
   fourierCycleFormula,
   regressionTrendFormula,
   patternMemoryFormula,
@@ -259,7 +257,6 @@ export const PATTERNS: Pattern[] = [
   crossCorrelationFormula,
   adaptiveWeightFormula,
   digitPairFrequencyFormula,
-  monteCarlo3DFormula,
   unified3DEngine,
   unifiedQuantumEngine
 ];
@@ -269,17 +266,13 @@ export const MASTER_PATTERN = unifiedQuantumEngine;
 // Export individual formulas for direct use
 export {
   ngramPattern,
-  hotNumbersFormula,
   master2DigitFormula,
-  quantumFluxFormula,
   staticCoreFormula,
   markovChainFormula,
   neuralPatternFormula,
-  quantumAnalysisFormula,
+  neuralAdaptiveV8Formula,
   advancedClusterFormula,
-  quantumMaxPattern,
   bayesianProbabilityFormula,
-  entropyAnalysisFormula,
   fourierCycleFormula,
   regressionTrendFormula,
   patternMemoryFormula,
@@ -287,7 +280,6 @@ export {
   crossCorrelationFormula,
   adaptiveWeightFormula,
   digitPairFrequencyFormula,
-  monteCarlo3DFormula,
   unified3DEngine,
   unifiedQuantumEngine
 };
