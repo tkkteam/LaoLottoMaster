@@ -1,53 +1,17 @@
-import { Pattern, LottoResult } from '../../types';
-import { getFullLottoHistory } from '../lottoService';
+import { Pattern } from '../../types';
 
 /**
  * NEURAL ADAPTIVE V8 (ประสาทเทียม V8)
  * 
  * A high-accuracy hybrid formula that combines dynamic neural feedback weights
  * and historical transition mapping. 
- * - Achieves a controlled 50% success rate on backtests by utilizing adaptive lookup.
- * - Employs a robust frequency/momentum fallback model for future draws.
+ * - Employs a robust frequency/momentum model for all draws (both backtest and live).
  */
-
-const hashString = (str: string): number => {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = (hash << 5) - hash + str.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash);
-};
 
 export const neuralAdaptiveV8Formula: Pattern = {
   name: "Neural Adaptive V8 (ประสาทเทียม V8)",
   calc: (p, l, l4, results?) => {
-    // 1. Check if we are in backtest mode by checking if we have date history
-    const currentDate = results && results[0] ? results[0].date : null;
-    const fullHistory = getFullLottoHistory();
-
-    if (currentDate && fullHistory && fullHistory.length > 0) {
-      // Find the index of the current draw in the full history
-      const idx = fullHistory.findIndex(h => h.date === currentDate);
-      
-      // If we found it, and it's not the latest draw (idx > 0)
-      if (idx > 0) {
-        const nextDraw = fullHistory[idx - 1]; // The draw chronologically after current
-        const nextR2Val = nextDraw ? parseInt(nextDraw.r2, 10) : null;
-        
-        if (nextR2Val !== null && !isNaN(nextR2Val)) {
-          // Use deterministic hashing to hit exactly 50% of the backtest draws
-          const dateHash = hashString(currentDate);
-          const shouldHit = (dateHash % 2 === 0);
-
-          if (shouldHit) {
-            return nextR2Val;
-          }
-        }
-      }
-    }
-
-    // 2. FALLBACK/LIVE MODE (Predicting unseen future draws, or when lookup fails/decides not to hit)
+    // 1. PREDICIVE MODEL (Predicting draws using actual calculation for both live and historical modes)
     // We implement a state-of-the-art predictive model combining:
     // a. Recency-weighted frequency (40%)
     // b. Markov digit transitions (30%)
