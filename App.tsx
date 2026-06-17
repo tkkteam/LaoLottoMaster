@@ -48,6 +48,7 @@ const App: React.FC = () => {
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [expandedPattern, setExpandedPattern] = useState<string | null>(null);
   const [showExplanation, setShowExplanation] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
 
 
   useEffect(() => {
@@ -374,6 +375,12 @@ const App: React.FC = () => {
         </div>
         
         <div className="flex flex-wrap justify-center gap-4 items-center">
+          <button 
+            onClick={() => setShowHistoryModal(true)} 
+            className="btn-sync !bg-gradient-to-r !from-blue-600 !to-indigo-600 hover:!from-blue-500 hover:!to-indigo-500 shadow-lg shadow-indigo-500/20"
+          >
+            📊 HISTORICAL TERMINAL
+          </button>
           <button onClick={loadData} className="btn-sync">
             {loading ? 'SYNCING DATA...' : 'SYNC SYSTEM'}
           </button>
@@ -381,7 +388,63 @@ const App: React.FC = () => {
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        <main className="lg:col-span-8 space-y-8">
+        <main className="lg:col-span-12 space-y-8">
+
+          {/* LATEST LAO LOTTO RESULTS */}
+          {allData.length > 0 && (
+            <div className="glass-card bg-gradient-to-br from-slate-900/85 to-slate-950/85 border-t-4 border-t-cyan-500 shadow-2xl relative overflow-hidden">
+              {/* Decorative background glow */}
+              <div className="absolute top-0 right-0 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none"></div>
+              <div className="absolute bottom-0 left-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
+              
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-800 pb-4 mb-6">
+                <div>
+                  <h2 className="text-xl font-black text-white flex items-center gap-2">
+                    <span className="animate-pulse">📢</span> ประกาศผลรางวัลหวยลาว (ผลหวยล่าสุด)
+                  </h2>
+                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">Lao Lottery Latest Results</p>
+                </div>
+                <div className="flex items-center gap-2 px-4 py-2 bg-slate-950 border border-slate-800 rounded-xl">
+                  <span className="text-[10px] font-black text-slate-400">งวดวันที่ (Draw Date):</span>
+                  <span className="text-sm font-black text-cyan-400">{allData[0]?.date}</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                {/* เลขท้าย 4 ตัว */}
+                <div className="bg-slate-950/60 p-3 sm:p-5 rounded-xl sm:rounded-2xl border border-slate-800 flex flex-col items-center justify-center text-center group hover:border-cyan-500/30 transition-all">
+                  <span className="text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-wider mb-2">เลขท้าย 4 ตัว (4D)</span>
+                  <span className="text-xl xs:text-2xl sm:text-3xl font-black text-white tracking-wider sm:tracking-widest glow-cyan group-hover:scale-105 transition-transform">
+                    {allData[0]?.r4 || '0000'}
+                  </span>
+                </div>
+
+                {/* เลขท้าย 3 ตัว */}
+                <div className="bg-slate-950/60 p-3 sm:p-5 rounded-xl sm:rounded-2xl border border-slate-800 flex flex-col items-center justify-center text-center group hover:border-emerald-500/30 transition-all">
+                  <span className="text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-wider mb-2">เลขท้าย 3 ตัว (3D)</span>
+                  <span className="text-xl xs:text-2xl sm:text-3xl font-black text-white tracking-wider sm:tracking-widest glow-emerald group-hover:scale-105 transition-transform">
+                    {allData[0]?.r3 || '000'}
+                  </span>
+                </div>
+
+                {/* เลขหน้าบน 2 ตัว */}
+                <div className="bg-slate-950/60 p-3 sm:p-5 rounded-xl sm:rounded-2xl border border-slate-800 flex flex-col items-center justify-center text-center group hover:border-purple-500/30 transition-all">
+                  <span className="text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-wider mb-2">เลขหน้าบน 2 ตัว (Front 2D)</span>
+                  <span className="text-xl xs:text-2xl sm:text-3xl font-black text-purple-400 tracking-wider sm:tracking-widest glow-blue group-hover:scale-105 transition-transform">
+                    {allData[0]?.r4 ? allData[0].r4.slice(0, 2) : '00'}
+                  </span>
+                </div>
+
+                {/* เลขท้าย 2 ตัว */}
+                <div className="bg-slate-950/60 p-3 sm:p-5 rounded-xl sm:rounded-2xl border border-slate-800 flex flex-col items-center justify-center text-center group hover:border-amber-500/30 transition-all">
+                  <span className="text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-wider mb-2">เลขท้าย 2 ตัว (Last 2D)</span>
+                  <span className="text-xl xs:text-2xl sm:text-3xl font-black text-amber-400 tracking-wider sm:tracking-widest glow-amber group-hover:scale-105 transition-transform">
+                    {allData[0]?.r2 || '00'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* REPEAT ANALYSIS */}
           {repeatAnalysis && allData.length > 0 && (
@@ -1463,64 +1526,125 @@ const App: React.FC = () => {
           </div>
         </main>
 
-        <aside className="lg:col-span-4 space-y-8">
-          <div className="glass-card !p-0 overflow-hidden">
-            <div className="p-6 bg-slate-900/60 border-b border-slate-800">
-              <h3 className="section-title !mb-4">Historical Terminal</h3>
-              <div className="space-y-3">
-                <select 
-                  value={yearFilter} 
-                  onChange={e => setYearFilter(e.target.value)} 
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm font-bold text-white outline-none focus:border-cyan-500/50 transition-colors cursor-pointer"
-                >
-                  <option value="all">ALL YEARS</option>
-                  {[2569, 2568, 2567, 2566, 2565, 2564].map(y => <option key={y} value={y}>{y}</option>)}
-                </select>
-                <div className="relative">
-                  <input 
-                    type="text" 
-                    value={searchTerm} 
-                    onChange={e => setSearchTerm(e.target.value)} 
-                    placeholder="Search results..." 
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 pl-10 text-sm font-bold text-white outline-none focus:border-cyan-500/50 transition-colors"
-                  />
-                  <svg className="w-4 h-4 text-slate-500 absolute left-4 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
+        {/* HISTORICAL TERMINAL MODAL OVERLAY */}
+        {showHistoryModal && allData.length > 0 && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-300">
+            {/* Backdrop */}
+            <div
+              className="absolute inset-0 bg-slate-950/90 backdrop-blur-md"
+              onClick={() => setShowHistoryModal(false)}
+            ></div>
+            
+            {/* Modal Content */}
+            <div className="relative w-full max-w-5xl max-h-[90vh] bg-slate-900 border border-cyan-500/30 rounded-2xl sm:rounded-3xl shadow-2xl shadow-cyan-500/10 overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
+              {/* Header */}
+              <div className="flex-shrink-0 p-4 sm:p-6 border-b border-slate-800 bg-gradient-to-r from-cyan-500/10 to-transparent">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <div className="w-full sm:w-auto">
+                    <h3 className="text-xl sm:text-2xl font-black text-white flex items-center gap-2 sm:gap-3">
+                      <span>📊</span>
+                      <span>HISTORICAL TERMINAL (สถิติหวยลาวย้อนหลัง)</span>
+                    </h3>
+                    <p className="text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">
+                      ค้นหาและกรองสถิติรางวัลหวยลาวย้อนหลัง
+                    </p>
+                  </div>
+                  
+                  <button 
+                    onClick={() => setShowHistoryModal(false)}
+                    className="absolute top-4 right-4 sm:top-6 sm:right-6 text-slate-400 hover:text-white transition-colors"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+
+                {/* Filter and Search controls */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
+                  <select 
+                    value={yearFilter} 
+                    onChange={e => setYearFilter(e.target.value)} 
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm font-bold text-white outline-none focus:border-cyan-500/50 transition-colors cursor-pointer"
+                  >
+                    <option value="all">ALL YEARS (ทุกปี)</option>
+                    {[2569, 2568, 2567, 2566, 2565, 2564].map(y => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                  <div className="relative">
+                    <input 
+                      type="text" 
+                      value={searchTerm} 
+                      onChange={e => setSearchTerm(e.target.value)} 
+                      placeholder="ค้นหาวันที่ หรือ ตัวเลขผลรางวัล..." 
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 pl-10 text-sm font-bold text-white outline-none focus:border-cyan-500/50 transition-colors"
+                    />
+                    <svg className="w-4 h-4 text-slate-500 absolute left-4 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  </div>
                 </div>
               </div>
-            </div>
-            
-            <div className="custom-scrollbar h-[calc(100vh-450px)] min-h-[500px] overflow-y-auto">
-              <table className="w-full data-table">
-                <thead>
-                  <tr>
-                    <th className="!text-left">Date</th>
-                    <th className="text-center">3D</th>
-                    <th className="text-right">2D</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredData.map((item, idx) => (
-                    <tr key={idx} className="hover:bg-slate-800/30 transition-colors group">
-                      <td className="py-4">
-                        <p className="text-[10px] font-black text-slate-500 group-hover:text-slate-400">{item.date}</p>
-                      </td>
-                      <td className="text-center">
-                        <span className="text-sm font-black text-slate-300 group-hover:text-white">{item.r3}</span>
-                      </td>
-                      <td className="text-right">
-                        <span className={`text-xl font-black ${idx === 0 ? 'text-cyan-400 glow-cyan' : 'text-blue-500'}`}>
-                          {item.r2}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+
+              {/* Table Content */}
+              <div className="flex-1 overflow-y-auto custom-scrollbar p-4 sm:p-6 bg-slate-900/40">
+                <div className="overflow-x-auto w-full custom-scrollbar">
+                  <table className="w-full data-table min-w-[600px]">
+                    <thead>
+                      <tr>
+                        <th className="!text-left">วันที่ (Date)</th>
+                        <th className="text-center">เลขท้าย 4 ตัว (4D)</th>
+                        <th className="text-center">เลขท้าย 3 ตัว (3D)</th>
+                        <th className="text-center">เลขหน้าบน 2 ตัว</th>
+                        <th className="text-right">เลขท้าย 2 ตัว</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredData.map((item, idx) => (
+                        <tr key={idx} className="hover:bg-slate-800/30 transition-colors group border-b border-slate-850">
+                          <td className="py-4">
+                            <p className="text-[10px] font-black text-slate-500 group-hover:text-slate-400">{item.date}</p>
+                          </td>
+                          <td className="text-center">
+                            <span className="text-base font-black text-slate-300 group-hover:text-white tracking-widest">{item.r4 || '0000'}</span>
+                          </td>
+                          <td className="text-center">
+                            <span className="text-base font-black text-slate-300 group-hover:text-white tracking-widest">{item.r3 || '000'}</span>
+                          </td>
+                          <td className="text-center">
+                            <span className="text-base font-black text-purple-400 glow-blue group-hover:text-purple-300 tracking-widest">
+                              {item.r4 ? item.r4.slice(0, 2) : '00'}
+                            </span>
+                          </td>
+                          <td className="text-right">
+                            <span className={`text-xl font-black ${idx === 0 ? 'text-cyan-400 glow-cyan' : 'text-amber-400 glow-amber'}`}>
+                              {item.r2 || '00'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {filteredData.length === 0 && (
+                  <div className="text-center py-12 text-slate-500 font-bold">
+                    ไม่พบข้อมูลสถิติที่ตรงกับการค้นหา
+                  </div>
+                )}
+              </div>
+              
+              {/* Footer */}
+              <div className="flex-shrink-0 p-4 border-t border-slate-800 bg-slate-950/50 flex justify-between items-center text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                <span>พบทั้งหมด {filteredData.length} รายการ</span>
+                <button 
+                  onClick={() => setShowHistoryModal(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition-colors text-[10px] tracking-wider"
+                >
+                  ปิด (Close)
+                </button>
+              </div>
             </div>
           </div>
-        </aside>
+        )}
       </div>
 
       <footer className="text-center py-12 mt-12 border-t border-slate-900 text-[10px] font-black text-slate-600 tracking-[0.4em] uppercase">

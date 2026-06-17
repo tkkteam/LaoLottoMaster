@@ -13,7 +13,7 @@
 
 @layer components {
   .glass-card {
-    @apply bg-slate-900/40 backdrop-blur-xl border border-white/10 shadow-2xl rounded-3xl p-6 md:p-8;
+    @apply bg-slate-900/40 backdrop-blur-xl border border-white/10 shadow-2xl rounded-2xl md:rounded-3xl p-4 sm:p-6 md:p-8;
   }
   
   .btn-sync {
