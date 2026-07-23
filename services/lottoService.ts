@@ -17,7 +17,8 @@ import {
   adaptiveWeightFormula,
   digitPairFrequencyFormula,
   unified3DEngine,
-  unifiedQuantumEngine
+  unifiedQuantumEngine,
+  hybridMasterPro
 } from './formulas';
 
 export const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQKbaNztX47-SnDvWbfYskTxHscwDCRYkEnVuKFmc-R8v7usDwWEjs-QaWk3cDm6yBGI7NImVNYaqFc/pub?gid=709667456&single=true&output=csv';
@@ -242,26 +243,31 @@ export const fetchLottoData = async (): Promise<LottoResult[]> => {
  */
 
 export const PATTERNS: Pattern[] = [
-  master2DigitFormula,
-  markovChainFormula,
-  neuralPatternFormula,
-  neuralAdaptiveV8Formula,
-  advancedClusterFormula,
-  ngramPattern,
+  // 🏆 Top 6 สูตรแม่นสุดจาก Backtest (Running 34-46%)
   staticCoreFormula,
   bayesianProbabilityFormula,
-  fourierCycleFormula,
-  regressionTrendFormula,
-  patternMemoryFormula,
-  smartFusionFormula,
+  digitPairFrequencyFormula,
+  ngramPattern,
   crossCorrelationFormula,
   adaptiveWeightFormula,
-  digitPairFrequencyFormula,
+  // 🆕 Hybrid Master Pro - สูตรรวม Top 6 + Weighted Vote + Cold Due + Sum Cycle
+  hybridMasterPro,
+  // สูตรเสริม
+  unifiedQuantumEngine,
   unified3DEngine,
-  unifiedQuantumEngine
+  patternMemoryFormula,
+  smartFusionFormula,
+  neuralAdaptiveV8Formula,
+  neuralPatternFormula,
+  fourierCycleFormula,
+  advancedClusterFormula,
+  regressionTrendFormula,
+  master2DigitFormula,
+  markovChainFormula
 ];
 
-export const MASTER_PATTERN = unifiedQuantumEngine;
+// ✅ เปลี่ยน MASTER เป็น Hybrid Master Pro (ดีที่สุดจาก Backtest)
+export const MASTER_PATTERN = hybridMasterPro;
 
 // Export individual formulas for direct use
 export {
@@ -281,7 +287,8 @@ export {
   adaptiveWeightFormula,
   digitPairFrequencyFormula,
   unified3DEngine,
-  unifiedQuantumEngine
+  unifiedQuantumEngine,
+  hybridMasterPro
 };
 
 export { MIRRORS };
@@ -613,54 +620,6 @@ function selectHybridMasterV2(
 
   // ไม่มี current master → เลือกสูตรที่ดีที่สุด
   return scored[0];
-}
-
-/**
- * เลือก Active Master ด้วยกฎ Hybrid Approach (เดิม - เก็บไว้สำหรับ backward compatibility)
- * - เปลี่ยนสูตรเฉพาะเมื่อ:
- *   1. สูตรปัจจุบัน maxConsecutive < 4 (ล้มเหลว) หรือ
- *   2. สูตรใหม่ดีกว่าอย่างน้อย 10% และ stable
- */
-function selectHybridMaster(
-  hybridResults: Array<import('../types').HybridPatternInfo>,
-  currentMasterPattern?: Pattern
-): import('../types').HybridPatternInfo {
-  // กรองเฉพาะสูตรที่ qualified
-  const qualified = hybridResults.filter(h => h.isQualified);
-  
-  if (qualified.length === 0) {
-    // ถ้าไม่มีสูตรไหน qualified เลย ใช้สูตรที่ดีที่สุด
-    return hybridResults[0];
-  }
-
-  // ถ้ามี current master และยัง qualified อยู่
-  if (currentMasterPattern) {
-    const currentMaster = hybridResults.find(h => h.pattern.name === currentMasterPattern.name);
-    
-    if (currentMaster && currentMaster.isQualified) {
-      // ตรวจสอบว่ามีสูตรอื่นที่ดีกว่ามากไหม (ดีกว่า 10% ขึ้นไป)
-      const betterAlternative = qualified.find(h => {
-        if (h.pattern.name === currentMasterPattern.name) return false;
-        const historicalDiff = h.historicalStats.directAccuracy - currentMaster.historicalStats.directAccuracy;
-        const stabilityBonus = (h.stabilityScore - currentMaster.stabilityScore) / 10;
-        return (historicalDiff + stabilityBonus) >= 10; // ต้องดีกว่า 10%
-      });
-
-      if (!betterAlternative) {
-        // ยังไม่มีสูตรที่ดีกว่ามาก → ใช้สูตรเดิมต่อไป
-        return currentMaster;
-      }
-      
-      // มีสูตรที่ดีกว่ามาก → เปลี่ยนไปใช้สูตรใหม่
-      return betterAlternative;
-    }
-    
-    // current master ไม่ qualified แล้ว → เลือกสูตรใหม่ที่ดีที่สุด
-    return qualified[0];
-  }
-
-  // ไม่มี current master → เลือกสูตรที่ดีที่สุด
-  return qualified[0];
 }
 
 /**

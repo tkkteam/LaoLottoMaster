@@ -421,44 +421,44 @@ function smartFusion(p: number, l: number, l4: string | undefined, results: Lott
   return (tensVotes.indexOf(Math.max(...tensVotes)) * 10) + unitsVotes.indexOf(Math.max(...unitsVotes));
 }
 
-// ===== 18. CROSS CORRELATION =====
-function crossCorrelation(p: number, l: number, l4: string | undefined, results: LottoResult[] | undefined): number {
-  if (!results || results.length < 20) return ((Math.floor(l / 10) + 1) % 10 * 10) + ((l % 10 + 4) % 10);
-  const N = Math.min(60, results.length);
-  const data = results.slice(0, N);
-  const r2Tens: number[] = [], r2Units: number[] = [];
-  for (let i = data.length - 1; i >= 0; i--) {
-    const r2 = parseInt(data[i].r2, 10);
-    r2Tens.push(Math.floor(r2 / 10));
-    r2Units.push(r2 % 10);
-  }
-  const crossCorr = (x: number[], y: number[], maxLag = 5): number[][] => {
-    const n = Math.min(x.length, y.length);
-    const meanX = x.slice(0, n).reduce((a, b) => a + b, 0) / n;
-    const meanY = y.slice(0, n).reduce((a, b) => a + b, 0) / n;
-    const stdX = Math.sqrt(x.slice(0, n).reduce((s, v) => s + (v - meanX) ** 2, 0) / n) || 1;
-    const stdY = Math.sqrt(y.slice(0, n).reduce((s, v) => s + (v - meanY) ** 2, 0) / n) || 1;
-    const correlations: number[][] = [];
-    for (let lag = -maxLag; lag <= maxLag; lag++) {
-      let sum = 0, count = 0;
-      for (let i = 0; i < n; i++) {
-        const j = i + lag;
-        if (j >= 0 && j < n) { sum += ((x[i] - meanX) / stdX) * ((y[j] - meanY) / stdY); count++; }
-      }
-      correlations.push([lag, count > 0 ? sum / count : 0]);
+  // ===== 18. CROSS CORRELATION (Bug B3 fix: now actually uses cross-correlation) =====
+  function crossCorrelation(p: number, l: number, l4: string | undefined, results: LottoResult[] | undefined): number {
+    if (!results || results.length < 20) return ((Math.floor(l / 10) + 1) % 10 * 10) + ((l % 10 + 4) % 10);
+    const N = Math.min(60, results.length);
+    const data = results.slice(0, N);
+    // Build chronological series (oldest → newest)
+    const r2Tens: number[] = [], r2Units: number[] = [];
+    for (let i = data.length - 1; i >= 0; i--) {
+      const r2 = parseInt(data[i].r2, 10);
+      r2Tens.push(Math.floor(r2 / 10));
+      r2Units.push(r2 % 10);
     }
-    return correlations;
-  };
-  const tensFreq = Array(10).fill(0), unitsFreq = Array(10).fill(0);
-  for (let i = 0; i < Math.min(20, data.length); i++) {
-    const r2 = parseInt(data[i].r2, 10);
-    tensFreq[Math.floor(r2 / 10)]++;
-    unitsFreq[r2 % 10]++;
+
+    // Cross-correlation: find lag with strongest predictive correlation,
+    // then use the value at that lag relative to the latest draw as the prediction.
+    const crossCorr = (series: number[], maxLag = 5): number => {
+      const n = series.length;
+      const mean = series.reduce((a, b) => a + b, 0) / n;
+      const std = Math.sqrt(series.reduce((s, v) => s + (v - mean) ** 2, 0) / n) || 1;
+      let bestLag = 1, bestCorr = -2;
+      for (let lag = 1; lag <= maxLag && lag < n; lag++) {
+        let sum = 0, count = 0;
+        for (let i = lag; i < n; i++) {
+          sum += ((series[i] - mean) / std) * ((series[i - lag] - mean) / std);
+          count++;
+        }
+        const corr = count > 0 ? Math.abs(sum / count) : 0;
+        if (corr > bestCorr) { bestCorr = corr; bestLag = lag; }
+      }
+      // Predict using the value `bestLag` steps back
+      const predictorIdx = n - 1 - bestLag;
+      return predictorIdx >= 0 ? series[predictorIdx] : series[n - 1];
+    };
+
+    const predictedTens = crossCorr(r2Tens);
+    const predictedUnits = crossCorr(r2Units);
+    return (predictedTens * 10) + predictedUnits;
   }
-  const predictedTens = tensFreq.indexOf(Math.max(...tensFreq));
-  const predictedUnits = unitsFreq.indexOf(Math.max(...unitsFreq));
-  return (predictedTens * 10) + predictedUnits;
-}
 
 // ===== 19. ADAPTIVE WEIGHT =====
 function adaptiveWeight(p: number, l: number, l4: string | undefined, results: LottoResult[] | undefined): number {
@@ -576,7 +576,7 @@ export const unifiedQuantumEngine: Pattern = {
       master2Digit,
       markovChain,
       neuralPattern,
-      neuralAdaptiveV8Formula.calc,
+      (p, l, l4, results) => neuralAdaptiveV8Formula.calc(p, l, l4 ?? '', results),
       advancedCluster,
       ngramPattern,
       staticCore,

@@ -16,4 +16,5 @@ export { adaptiveWeightFormula } from './adaptiveWeight';
 export { digitPairFrequencyFormula } from './digitPairFrequency';
 export { unified3DEngine } from './deepLearning3D';
 export { unifiedQuantumEngine } from './unifiedQuantumEngine';
+export { hybridMasterPro } from './hybridMasterPro';
 

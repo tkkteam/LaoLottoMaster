@@ -114,35 +114,13 @@ const App: React.FC = () => {
     const data = await fetchLottoData();
     setAllData(data);
 
-    // ✅ 1. ค้นหาสูตรที่ดีที่สุดจากการ Backtest ย้อนหลัง (ใช้ Logic จาก Hybrid Patterns)
-    const hybrid = analyzeHybridPatterns(data, undefined, 30);
-    setHybridPatterns(hybrid);
-    
-    // หาสูตรที่มี Accuracy รวมสูงสุด (Direct + Running)
-    const bestHybrid = [...hybrid].sort((a, b) => {
-      const scoreA = a.historicalStats.directAccuracy + (a.historicalStats.runningAccuracy * 0.5);
-      const scoreB = b.historicalStats.directAccuracy + (b.historicalStats.runningAccuracy * 0.5);
-      return scoreB - scoreA;
-    })[0];
-
-    if (bestHybrid) {
-      // ใช้คำทำนายจากสูตรที่ดีที่สุด
-      const lastResult = data[0];
-      const prevResult = data[1];
-      const pred = bestHybrid.pattern.calc(
-        parseInt(prevResult.r2, 10),
-        parseInt(lastResult.r2, 10),
-        lastResult.r4,
-        data
-      ).toString().padStart(2, '0');
-    }
-
     if (data.length > 30) {
-      // HYBRID ANALYSIS - ต้องทำก่อน เพื่อเลือก Active Master ที่ถูกต้อง
-      const hybrid = analyzeHybridPatterns(data, undefined, 4); // ครั้งแรกไม่มี currentMaster
+      // HYBRID ANALYSIS - คำนวณครั้งเดียว (แก้ Bug B2: เดิมเรียก 2 ครั้ง)
+      // ใช้ minConsecutive=4 เพื่อกรองสูตรที่เคยทายถูกติดต่อกันอย่างน้อย 4 งวด
+      const hybrid = analyzeHybridPatterns(data, undefined, 4);
       setHybridPatterns(hybrid);
-      
-      // เลือก Active Master ที่ดีที่สุด
+
+      // เลือก Active Master ที่ดีที่สุด (คะแนนรวมสูงสุดจาก Hybrid V2)
       const activeMaster = hybrid.find(h => h.isActiveMaster);
       if (activeMaster) {
         setBestPatternInfo({
@@ -159,6 +137,10 @@ const App: React.FC = () => {
       const lastR2 = data[0].r2.padStart(2, '0');
       const repeat = analyzeRepeatProbability(data, lastR2, 100);
       setRepeatAnalysis(repeat);
+    } else {
+      // ข้อมูลน้อย - ใช้ findBestPattern โดยตรง
+      const best = findBestPattern(data, 20);
+      setBestPatternInfo(best);
     }
 
     setLoading(false);

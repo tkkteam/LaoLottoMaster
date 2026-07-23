@@ -106,6 +106,23 @@ export function backtestBackyardWithConstants(
   const accuracy = totalRounds > 0 ? (hits / totalRounds) * 100 : 0;
   const runningAccuracy = totalRounds > 0 ? (runningHits / totalRounds) * 100 : 0;
 
+  // ✅ Bug B4 fix: compute real accuracy trend (compare newer half vs older half)
+  const halfPoint = Math.floor(totalRounds / 2);
+  let firstHalfHits = 0, secondHalfHits = 0;
+  // hitDetails[0] = most recent round
+  hitDetails.forEach((d, idx) => {
+    if (idx < halfPoint) {
+      if (d.isHit) secondHalfHits++; // newer half (recent)
+    } else {
+      if (d.isHit) firstHalfHits++; // older half
+    }
+  });
+  const olderAcc = halfPoint > 0 ? (firstHalfHits / (totalRounds - halfPoint)) * 100 : 0;
+  const recentAcc = halfPoint > 0 ? (secondHalfHits / halfPoint) * 100 : 0;
+  const trendDiff = recentAcc - olderAcc;
+  const accuracyTrend: 'UP' | 'DOWN' | 'STABLE' =
+    trendDiff > 5 ? 'UP' : trendDiff < -5 ? 'DOWN' : 'STABLE';
+
   return {
     totalRounds,
     hits,
@@ -115,6 +132,6 @@ export function backtestBackyardWithConstants(
     hitDetails,
     streak: { current: currentStreak, best: bestStreak },
     runningStreak: { current: currentRunningStreak, best: bestRunningStreak },
-    accuracyTrend: 'STABLE' // Placeholder for trend
+    accuracyTrend
   };
 }
