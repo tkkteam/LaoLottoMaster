@@ -1460,52 +1460,54 @@ const App: React.FC = () => {
           )}
 
           {/* Charts Section */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="glass-card">
-              <h3 className="section-title">Frequency Histogram</h3>
-              <div className="h-[250px] w-full mt-4">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={stats?.chartData || []}>
-                    <XAxis dataKey="num" tick={{fontSize: 9, fill: '#64748b'}} axisLine={false} tickLine={false} />
-                    <YAxis hide />
-                    <Tooltip 
-                      cursor={{fill: 'rgba(255,255,255,0.05)'}}
-                      contentStyle={{backgroundColor: '#0f172a', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 20px 50px rgba(0,0,0,0.5)'}} 
-                    />
-                    <Bar dataKey="count" fill="url(#colorBar)" radius={[6, 6, 0, 0]}>
-                      <defs>
-                        <linearGradient id="colorBar" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#22d3ee" />
-                          <stop offset="100%" stopColor="#3b82f6" />
-                        </linearGradient>
-                      </defs>
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
+          {stats && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="glass-card">
+                <h3 className="section-title">Frequency Histogram</h3>
+                <div className="h-[250px] w-full mt-4">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                    <BarChart data={stats?.chartData || []}>
+                      <XAxis dataKey="num" tick={{fontSize: 9, fill: '#64748b'}} axisLine={false} tickLine={false} />
+                      <YAxis hide />
+                      <Tooltip 
+                        cursor={{fill: 'rgba(255,255,255,0.05)'}}
+                        contentStyle={{backgroundColor: '#0f172a', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 20px 50px rgba(0,0,0,0.5)'}} 
+                      />
+                      <Bar dataKey="count" fill="url(#colorBar)" radius={[6, 6, 0, 0]}>
+                        <defs>
+                          <linearGradient id="colorBar" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#22d3ee" />
+                            <stop offset="100%" stopColor="#3b82f6" />
+                          </linearGradient>
+                        </defs>
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+              <div className="glass-card">
+                <h3 className="section-title">Parity Distribution</h3>
+                <div className="h-[250px] w-full mt-4">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                    <PieChart>
+                      <Pie 
+                        data={stats?.parityData || []} 
+                        innerRadius={60} 
+                        outerRadius={85} 
+                        paddingAngle={8} 
+                        dataKey="value"
+                        stroke="none"
+                      >
+                        {(stats?.parityData || []).map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                      </Pie>
+                      <Tooltip />
+                      <Legend verticalAlign="bottom" iconType="circle" wrapperStyle={{ fontSize: '10px', paddingTop: '20px' }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
             </div>
-            <div className="glass-card">
-              <h3 className="section-title">Parity Distribution</h3>
-              <div className="h-[250px] w-full mt-4">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie 
-                      data={stats?.parityData || []} 
-                      innerRadius={60} 
-                      outerRadius={85} 
-                      paddingAngle={8} 
-                      dataKey="value"
-                      stroke="none"
-                    >
-                      {(stats?.parityData || []).map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                    </Pie>
-                    <Tooltip />
-                    <Legend verticalAlign="bottom" iconType="circle" wrapperStyle={{ fontSize: '10px', paddingTop: '20px' }} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          </div>
+          )}
         </main>
 
         {/* HISTORICAL TERMINAL MODAL OVERLAY */}
